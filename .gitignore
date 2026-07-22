@@ -1,0 +1,15 @@
+# Personal reference material, not part of the project codebase
+/Первый этап/
+/Второй этап/
+/Новая папка/
+/Screenshot_2.png
+
+# Safety net in case any subproject's own .gitignore is bypassed
+**/node_modules/
+**/.env
+**/.env.*
+!**/.env.example
+**/.next/
+**/artifacts/
+**/cache/
+**/coverage/
