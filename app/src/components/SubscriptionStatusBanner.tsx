@@ -1,45 +1,39 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSubscriptionStatus } from "@/lib/subscription/status";
+import { useFreePlan } from "@/lib/subscription/freePlan";
 
-type Status = { active: boolean; activeUntil: number | null } | null;
-
+// Three states, deliberately not just "active/inactive":
+// 1. No paid tier AND free plan not activated — nudge toward the free tier
+//    (fast, no-commitment CTA), not straight at a paid upsell.
+// 2. No paid tier BUT free plan activated — the player already has *a*
+//    subscription, so "нет подписки" would be a lie; this is an upsell
+//    toward paid tiers instead.
+// 3. Paid tier active — hidden entirely. Nagging a paying subscriber for
+//    more money on every visit to the character list is the wrong call.
 export function SubscriptionStatusBanner({
   onGoToSubscription,
 }: {
   onGoToSubscription: () => void;
 }) {
-  const [status, setStatus] = useState<Status>(null);
-  const [loading, setLoading] = useState(true);
+  const statusQuery = useSubscriptionStatus();
+  const { isActivated: freeActivated, isLoading: freeLoading } = useFreePlan();
 
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/subscription/status")
-      .then((r) => r.json())
-      .then((data) => {
-        if (!cancelled) setStatus(data);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  if (statusQuery.isLoading || freeLoading) return null;
+  if (statusQuery.data?.active) return null;
 
-  if (loading) return null;
-
-  if (status?.active) {
+  if (freeActivated) {
     return (
-      <div
-        className="mx-auto w-full max-w-3xl rounded-xl border border-emerald-400/20 bg-emerald-500/[0.06] px-4 py-2.5 text-sm text-emerald-300"
-        data-testid="subscription-banner-active"
+      <button
+        onClick={onGoToSubscription}
+        data-testid="subscription-banner-free"
+        className="mx-auto flex w-full max-w-3xl items-center justify-between gap-3 rounded-xl border border-fuchsia-400/20 bg-fuchsia-500/[0.06] px-4 py-2.5 text-left text-sm text-neutral-300 transition hover:border-fuchsia-400/40"
       >
-        Подписка активна
-        {status.activeUntil
-          ? ` до ${new Date(status.activeUntil * 1000).toLocaleDateString("ru-RU")}`
-          : ""}
-      </div>
+        <span>
+          Бесплатный тариф активен. Больше орудий, глав и скидка в магазине — на платных тарифах.
+        </span>
+        <span className="shrink-0 font-semibold text-fuchsia-300">Смотреть тарифы →</span>
+      </button>
     );
   }
 
@@ -49,8 +43,8 @@ export function SubscriptionStatusBanner({
       data-testid="subscription-banner-inactive"
       className="mx-auto flex w-full max-w-3xl items-center justify-between gap-3 rounded-xl border border-fuchsia-400/20 bg-fuchsia-500/[0.06] px-4 py-2.5 text-left text-sm text-neutral-300 transition hover:border-fuchsia-400/40"
     >
-      <span>Нет активной подписки — часть орудий и глав пока недоступна.</span>
-      <span className="shrink-0 font-semibold text-fuchsia-300">Оформить →</span>
+      <span>Ещё не выбрали тариф — бесплатный открывает первые главы за 10 секунд.</span>
+      <span className="shrink-0 font-semibold text-fuchsia-300">Начать бесплатно →</span>
     </button>
   );
 }

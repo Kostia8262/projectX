@@ -10,6 +10,9 @@ import { accessoriesFor } from "@/lib/shop/accessories";
 import { TOPUP_PACKAGES } from "@/lib/shop/coinConfig";
 import { ERC20_APPROVE_ABI } from "@/lib/erc20Abi";
 import { COIN_TOPUP_ABI } from "@/lib/shop/topUpAbi";
+import { PageTitle, SectionHeading } from "@/components/ui/Heading";
+import { Card, Tile } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
 
 const COIN_TOPUP_ADDRESS = process.env.NEXT_PUBLIC_COIN_TOPUP_CONTRACT_ADDRESS as
   | `0x${string}`
@@ -94,9 +97,7 @@ export function AccessoryShop() {
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 py-10">
       <div className="text-center">
-        <h1 className="bg-gradient-to-r from-fuchsia-300 via-white to-indigo-300 bg-clip-text text-3xl font-bold text-transparent">
-          Аксессуары
-        </h1>
+        <PageTitle>Аксессуары</PageTitle>
         <p className="mt-2 text-sm text-neutral-400">
           Косметика для персонажей — наряды, декор и коллекционные предметы. Без игрового
           эффекта на механики, только внешний вид сцен.
@@ -111,7 +112,7 @@ export function AccessoryShop() {
         )}
       </div>
 
-      <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.04] p-5">
+      <Card className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <span className="text-sm text-neutral-300">Баланс</span>
           <span className="text-lg font-semibold text-fuchsia-300">
@@ -121,17 +122,18 @@ export function AccessoryShop() {
         {topUpConfigured ? (
           <div className="flex flex-wrap gap-2">
             {TOPUP_PACKAGES.map((pkg) => (
-              <button
+              <Button
                 key={pkg.id}
                 onClick={() => handleTopUp(pkg)}
                 disabled={topUpPending !== null}
                 data-testid={`topup-${pkg.id}`}
-                className="rounded-lg border border-white/10 bg-white/[0.06] px-3 py-1.5 text-xs font-medium text-white transition hover:border-white/30 disabled:opacity-50"
+                variant="secondary"
+                size="sm"
               >
                 {topUpPending === pkg.id
                   ? "Пополнение…"
                   : `+${pkg.coins} монет${pkg.bonusPercent > 0 ? ` (+${pkg.bonusPercent}%)` : ""}`}
-              </button>
+              </Button>
             ))}
           </div>
         ) : (
@@ -140,7 +142,7 @@ export function AccessoryShop() {
           </p>
         )}
         {topUpError && <p className="text-xs text-rose-400">{topUpError}</p>}
-      </div>
+      </Card>
 
       {CHARACTERS.map((character) => {
         // Registration-gift items aren't sold here — they're granted once
@@ -149,7 +151,9 @@ export function AccessoryShop() {
         if (items.length === 0) return null;
         return (
           <div key={character.id}>
-            <p className="mb-3 text-sm font-medium text-white">{character.name}</p>
+            <SectionHeading dense className="mb-3">
+              {character.name}
+            </SectionHeading>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               {items.map((item) => {
                 const isOwned = owned.includes(item.id);
@@ -160,12 +164,9 @@ export function AccessoryShop() {
                 const canAfford = balance >= effectivePrice;
                 const isBuying = buy.isPending && buy.variables === item.id;
                 return (
-                  <div
-                    key={item.id}
-                    className="flex flex-col gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-4"
-                  >
+                  <Tile key={item.id} className="flex flex-col gap-2">
                     <span
-                      className="h-12 w-full rounded-lg"
+                      className="h-12 w-full rounded-xl"
                       style={{ backgroundColor: item.color }}
                     />
                     <p className="text-sm font-medium text-white">{item.name}</p>
@@ -180,17 +181,17 @@ export function AccessoryShop() {
                       {isOwned ? (
                         <span className="text-xs font-medium text-emerald-400">Куплено</span>
                       ) : (
-                        <button
+                        <Button
                           onClick={() => buy.mutate(item.id)}
                           disabled={!canAfford || isBuying}
                           data-testid={`buy-${item.id}`}
-                          className="rounded-lg bg-gradient-to-r from-fuchsia-500 to-indigo-500 px-3 py-1 text-xs font-semibold text-white disabled:opacity-40"
+                          size="sm"
                         >
                           {isBuying ? "…" : "Купить"}
-                        </button>
+                        </Button>
                       )}
                     </div>
-                  </div>
+                  </Tile>
                 );
               })}
             </div>

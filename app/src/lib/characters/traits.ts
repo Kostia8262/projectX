@@ -238,12 +238,15 @@ const AFTERCARE_DEBUFF = { boredom: 30, defiance: 25, affection: -18 };
 // something even if the player pays to recover faster.
 const AFTERCARE_RELIEF = { boredom: -15, defiance: -13, affection: 9 };
 
-export function applyAftercareDebuff(state: TraitState): TraitState {
+// `escalation` scales the whole debuff up — see override.ts's
+// escalationMultiplier: buying another Карт-бланш while she's still mid
+// recovery from the last one compounds the cost instead of resetting it.
+export function applyAftercareDebuff(state: TraitState, escalation: number = 1): TraitState {
   return {
     ...state,
-    boredom: clamp(state.boredom + AFTERCARE_DEBUFF.boredom),
-    defiance: clamp(state.defiance + AFTERCARE_DEBUFF.defiance),
-    affection: clamp(state.affection + AFTERCARE_DEBUFF.affection),
+    boredom: clamp(state.boredom + AFTERCARE_DEBUFF.boredom * escalation),
+    defiance: clamp(state.defiance + AFTERCARE_DEBUFF.defiance * escalation),
+    affection: clamp(state.affection + AFTERCARE_DEBUFF.affection * escalation),
     lastActiveAt: Date.now(),
   };
 }
@@ -258,35 +261,54 @@ export function applyAftercareRelief(state: TraitState): TraitState {
   };
 }
 
+export type ImplementBlockReason = "defiance" | "submission" | "boredom";
+
+export const IMPLEMENT_BLOCK_MESSAGES: Record<ImplementBlockReason, string> = {
+  defiance: "Недоступно — слишком высокая дерзость",
+  submission: "Недоступно — доверие ещё не заслужено",
+  boredom: "Недоступно — ей нужно что-то серьёзнее",
+};
+
 // Blocks are temporary, not permanent — each resolves as the underlying
-// trait drifts back through patient (or better-matched) play. "hand" is
-// always exempt: there must always be one safe fallback move available.
+// trait drifts back through patient (or better-matched) play.
+export function implementBlockReason(
+  state: TraitState,
+  character: CharacterDefinition,
+  implement: Implement,
+  overriding: boolean = false
+): ImplementBlockReason | null {
+  // Карт-бланш lifts every gate — that's the entire point of buying it.
+  if (overriding) return null;
+
+  // Open defiance — she won't engage with anything but the basics. Hand
+  // stays exempt HERE specifically, so there's always one fallback move —
+  // it must NOT be exempt from the boredom gate below, which exists
+  // precisely to let her refuse "just the basics".
+  if (state.defiance > 70 && implement.id !== "hand") return "defiance";
+
+  // Low-tolerance character, trust not yet earned — the harshest tier is
+  // gated until Submission proves it'll land as intended, not as overreach.
+  if (character.intensityTolerance === "low" && implement.unlock === "purchase" && state.submission < 25) {
+    return "submission";
+  }
+
+  // High-tolerance character, badly bored — she stops pretending the
+  // free-tier basics (hand included) are enough once boredom has crossed
+  // the hard line.
+  if (character.intensityTolerance === "high" && implement.unlock === "free" && state.boredom >= 70) {
+    return "boredom";
+  }
+
+  return null;
+}
+
 export function isImplementBlocked(
   state: TraitState,
   character: CharacterDefinition,
   implement: Implement,
   overriding: boolean = false
 ): boolean {
-  // Карт-бланш lifts every gate — that's the entire point of buying it.
-  if (overriding) return false;
-  if (implement.id === "hand") return false;
-
-  // Open defiance — she won't engage with anything but the basics.
-  if (state.defiance > 70) return true;
-
-  // Low-tolerance character, trust not yet earned — the harshest tier is
-  // gated until Submission proves it'll land as intended, not as overreach.
-  if (character.intensityTolerance === "low" && implement.unlock === "purchase" && state.submission < 25) {
-    return true;
-  }
-
-  // High-tolerance character, badly bored — she stops pretending the
-  // free-tier basics are enough once boredom has crossed the hard line.
-  if (character.intensityTolerance === "high" && implement.unlock === "free" && state.boredom >= 70) {
-    return true;
-  }
-
-  return false;
+  return implementBlockReason(state, character, implement, overriding) !== null;
 }
 
 export function relationshipStatusLine(

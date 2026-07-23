@@ -4,6 +4,9 @@ import type { ReactNode } from "react";
 import { useConnectors, type Connector } from "wagmi";
 import { useSiweSession } from "@/hooks/useSiweSession";
 import { AGE_DISCLAIMER_MESSAGE } from "@/lib/constants";
+import { PageTitle } from "@/components/ui/Heading";
+import { Card } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
 
 function friendlyConnectError(message: string): string {
   if (message.includes("Provider not found")) {
@@ -18,9 +21,9 @@ function friendlyConnectError(message: string): string {
 function GateCard({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center px-6">
-      <div className="w-full max-w-md rounded-3xl border border-white/10 bg-white/[0.06] p-10 text-center shadow-2xl shadow-black/40 backdrop-blur-2xl">
+      <Card size="lg" className="w-full max-w-md text-center shadow-2xl shadow-black/40">
         {children}
-      </div>
+      </Card>
     </div>
   );
 }
@@ -35,13 +38,9 @@ function GateButton({
   children: ReactNode;
 }) {
   return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className="w-full rounded-xl bg-gradient-to-r from-fuchsia-500 to-indigo-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-fuchsia-900/30 transition hover:brightness-110 disabled:opacity-50 disabled:hover:brightness-100"
-    >
+    <Button onClick={onClick} disabled={disabled} size="lg" className="w-full">
       {children}
-    </button>
+    </Button>
   );
 }
 
@@ -137,7 +136,7 @@ function ConnectorRow({
       disabled={disabled}
       className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-left transition hover:border-white/20 hover:bg-white/[0.08] disabled:opacity-50"
     >
-      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${badge}`}>
+      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${badge}`}>
         {icon}
       </span>
       <span className="flex min-w-0 flex-col">
@@ -171,9 +170,7 @@ export function AgeGate({ children }: { children: ReactNode }) {
   if (!session) {
     return (
       <GateCard>
-        <h1 className="bg-gradient-to-r from-fuchsia-300 via-white to-indigo-300 bg-clip-text text-2xl font-bold text-transparent">
-          Войти через кошелёк
-        </h1>
+        <PageTitle>Войти через кошелёк</PageTitle>
         <p className="mt-3 text-sm text-neutral-400">
           Выберите способ подключения и подпишите сообщение для входа — без пароля и без
           базы данных для его хранения.
@@ -193,7 +190,7 @@ export function AgeGate({ children }: { children: ReactNode }) {
               data-testid="patreon-login"
               className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-left transition hover:border-white/20 hover:bg-white/[0.08]"
             >
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-rose-500/15 text-rose-300">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-500/15 text-rose-300">
                 <PatreonIcon />
               </span>
               <span className="flex min-w-0 flex-col">
@@ -221,9 +218,7 @@ export function AgeGate({ children }: { children: ReactNode }) {
   if (!session.ageConfirmed) {
     return (
       <GateCard>
-        <h1 className="bg-gradient-to-r from-fuchsia-300 via-white to-indigo-300 bg-clip-text text-2xl font-bold text-transparent">
-          Подтверждение возраста
-        </h1>
+        <PageTitle>Подтверждение возраста</PageTitle>
         <p className="mt-3 text-sm text-neutral-400">{AGE_DISCLAIMER_MESSAGE}</p>
         <div className="mt-6">
           <GateButton

@@ -25,3 +25,10 @@ export const TOPUP_PACKAGES: TopUpPackage[] = [
 export function getTopUpPackage(id: number): TopUpPackage | undefined {
   return TOPUP_PACKAGES.find((p) => p.id === id);
 }
+
+// Energy is still the free, time-regenerating pacing resource (see
+// games/energy.ts) — this doesn't replace that, it just gives coins a
+// second use besides cosmetics: skip the wait instead of removing it.
+// 100 coins == the base top-up rate's $1, so a full refill is roughly a
+// dollar at list price.
+export const ENERGY_REFILL_COST_COINS = 100;

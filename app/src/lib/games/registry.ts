@@ -70,6 +70,20 @@ export type GameDefinition = {
   mechanic: GameMechanic;
 };
 
+// Admin-editable subset of GameDefinition (see app/admin/games and
+// api/admin/games) — deliberately excludes `id`/`implementIds`/`mechanic`:
+// those are structural, wired into other code (implementsFor, the
+// fixed/rate engine choice in page.tsx), and editing them from a text field
+// without validation could break a game rather than just reskin it.
+export type GameOverride = Partial<Pick<GameDefinition, "status" | "title" | "tagline" | "description" | "maxHeat">>;
+
+export function applyGameOverrides(
+  games: GameDefinition[],
+  overrides: Record<string, GameOverride>
+): GameDefinition[] {
+  return games.map((g) => (overrides[g.id] ? { ...g, ...overrides[g.id] } : g));
+}
+
 // Shared across every pilot — a "purchase"-gated implement is a real,
 // separate business decision from the subscription itself (per the user's
 // "actions can be paid for/intensified separately" direction).
@@ -260,6 +274,37 @@ export const GAMES: GameDefinition[] = [
     status: "available",
     characterLabel: "Персонаж D (заглушка)",
     implementIds: ["hand", "belt", "flogger", "cane", "riding-crop", "paddle-studded"],
+    maxHeat: 100,
+    mechanic: "rate",
+  },
+  // Full-roster test beds for Рин, mirroring pilot-b/pilot-d's "everything
+  // unlocked" coverage for Ада — needed so the low-tolerance gate
+  // (submission<25 blocks purchase-tier, see isImplementBlocked) and the
+  // tolerance-mismatch math actually have somewhere to fire; her other two
+  // games never expose an intense-tier implement at all. Visible in free
+  // play now; not wired into chapters.ts, so they stay ungated until the
+  // narrative team decides whether/how to fold them into the novel.
+  {
+    id: "pilot-e",
+    title: "Пилот E — Полное доверие",
+    tagline: "Всё, что есть",
+    description:
+      "Доступны все орудия сразу — проверка полного диапазона для персонажа с низкой толерантностью, а не только её обычного gentle/moderate набора.",
+    status: "available",
+    characterLabel: "Персонаж E (заглушка)",
+    implementIds: ["hand", "ruler", "paddle", "brush", "belt", "flogger", "cane", "riding-crop", "paddle-studded"],
+    maxHeat: 140,
+    mechanic: "fixed",
+  },
+  {
+    id: "pilot-f",
+    title: "Пилот F — Не сбавляя темп",
+    tagline: "Скорость на пределе",
+    description:
+      "Полный набор орудий на механике по темпу — проверка, как персонаж с низкой толерантностью держит нарастающий ритм, а не только фиксированную нагрузку.",
+    status: "available",
+    characterLabel: "Персонаж F (заглушка)",
+    implementIds: ["hand", "ruler", "paddle", "brush", "belt", "flogger", "cane", "riding-crop", "paddle-studded"],
     maxHeat: 100,
     mechanic: "rate",
   },

@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import type { GameOverride } from "../games/registry";
 
 // Server-side source of truth for shop state — coin balances, which
 // on-chain top-up transactions have already been credited (idempotency
@@ -51,6 +52,11 @@ type ShopState = {
   // be edited away by a UI bug or a bad click (see requireAdminSession),
   // this one can grow/shrink freely.
   grantedAdmins: Record<string, GrantedAdmin>;
+  // Admin edits to GAMES (games/registry.ts) — gameId -> patch. The code
+  // array stays the base/default; an entry here overrides specific fields
+  // on top of it. See games/registry.ts's applyGameOverrides and
+  // api/games/overrides (public read) / api/admin/games (admin write).
+  gameOverrides: Record<string, GameOverride>;
 };
 
 function emptyState(): ShopState {
@@ -63,6 +69,7 @@ function emptyState(): ShopState {
     adminLog: [],
     coinTopUpLog: [],
     grantedAdmins: {},
+    gameOverrides: {},
   };
 }
 
@@ -176,6 +183,26 @@ export async function purchaseAccessory(
     if (price > 0) state.balances[k] = balance - price;
     await persist(state);
     return { ok: true };
+  });
+}
+
+export type SpendResult = { ok: true; balance: number } | { ok: false; reason: "insufficient-balance" };
+
+/// Generic coin debit for anything that isn't an accessory purchase — the
+/// energy-refill shortcut, Карт-бланш/Забота (see characters/override.ts) —
+/// same atomicity guarantee as purchaseAccessory, just without the
+/// ownership side effect.
+export async function spendCoins(address: string, amount: number): Promise<SpendResult> {
+  return enqueue(async () => {
+    const state = await load();
+    const k = key(address);
+    const balance = state.balances[k] ?? 0;
+    if (amount > 0 && balance < amount) return { ok: false, reason: "insufficient-balance" };
+
+    const nextBalance = amount > 0 ? balance - amount : balance;
+    if (amount > 0) state.balances[k] = nextBalance;
+    await persist(state);
+    return { ok: true, balance: nextBalance };
   });
 }
 
@@ -317,6 +344,51 @@ export async function adminDeductCoins(
     });
     await persist(state);
     return state.balances[k];
+  });
+}
+
+// Not address-scoped like the rest of adminLog's entries — `address` here
+// holds the gameId instead, since a game override has no wallet involved.
+export async function getGameOverrides(): Promise<Record<string, GameOverride>> {
+  return enqueue(async () => {
+    const state = await load();
+    return { ...state.gameOverrides };
+  });
+}
+
+export async function setGameOverride(
+  adminAddress: string,
+  gameId: string,
+  patch: GameOverride
+): Promise<GameOverride> {
+  return enqueue(async () => {
+    const state = await load();
+    const next = { ...(state.gameOverrides[gameId] ?? {}), ...patch };
+    state.gameOverrides[gameId] = next;
+    pushAdminLog(state, {
+      at: Date.now(),
+      admin: key(adminAddress),
+      action: "set-game-override",
+      address: gameId,
+      detail: JSON.stringify(patch),
+    });
+    await persist(state);
+    return next;
+  });
+}
+
+export async function clearGameOverride(adminAddress: string, gameId: string): Promise<void> {
+  return enqueue(async () => {
+    const state = await load();
+    delete state.gameOverrides[gameId];
+    pushAdminLog(state, {
+      at: Date.now(),
+      admin: key(adminAddress),
+      action: "clear-game-override",
+      address: gameId,
+      detail: "",
+    });
+    await persist(state);
   });
 }
 

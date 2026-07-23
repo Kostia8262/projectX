@@ -59,14 +59,53 @@ export const STORIES: Record<string, GameStory> = {
     },
     fallback: "То ускоряясь, то позволяя себе передышку — довела её до предела осознанно, шаг за шагом.",
   },
+  // Full-roster test beds for Рин — see the comment on pilot-e/pilot-f in
+  // games/registry.ts for why they exist. Framed as the payoff of the trust
+  // built in pilot-a/pilot-c: she's the one asking to try the rest of the
+  // set now, not being pushed into it.
+  "pilot-e": {
+    intro:
+      "Сегодня она сама попросила: «Хочу попробовать всё, чего раньше боялась». На столе — весь набор, не только то, к чему она уже привыкла.",
+    variants: {
+      fast: "Не ожидала от себя такой смелости — переходит от одного орудия к другому почти без паузы, будто наверстывает упущенное время.",
+      slow: "Просит не торопиться — по одному, по очереди, чтобы прочувствовать разницу между тем, что знакомо, и тем, что пока пугает.",
+      "implement-cane": "Трость застаёт её врасплох — вдох сквозь зубы, а следом нервный смех: «Я и не знала, что так можно».",
+      "implement-paddle-studded": "Смотрит на шипастую шлёпалку дольше, чем нужно, прежде чем кивнуть — «Только медленно, ладно?»",
+    },
+    fallback:
+      "К концу она сама удивлена, как далеко зашла за один вечер — ещё утром половина этого набора казалась ей чем-то из чужой жизни.",
+  },
+  "pilot-f": {
+    intro:
+      "Тот же полный набор, но без пауз между ударами — она сама выбрала темп сегодня, а не подстраивалась под чужой.",
+    variants: {
+      fast: "Ритм несёт её быстрее, чем она рассчитывала — там, где раньше просила паузу, сегодня только просит не останавливаться.",
+      slow: "Держит собственный темп осознанно — пробует каждое орудие на вкус, не позволяя скорости смазать ощущения.",
+    },
+    fallback: "Между ускорениями и передышками она ищет свой ритм — не тот, что вы задаёте, а свой собственный, и им заметно гордится.",
+  },
 };
 
 // Duration thresholds are per-game since maxHeat/implement mix differ; these
 // are first-pass estimates for a human tap rate, not tuned telemetry.
-const FAST_UNDER_MS: Record<string, number> = { "pilot-a": 15000, "pilot-b": 25000, "pilot-c": 8000 };
-const SLOW_OVER_MS: Record<string, number> = { "pilot-a": 45000, "pilot-b": 70000, "pilot-c": 25000 };
+// pilot-e reuses pilot-b's numbers — same maxHeat, same full implement pool.
+const FAST_UNDER_MS: Record<string, number> = {
+  "pilot-a": 15000,
+  "pilot-b": 25000,
+  "pilot-c": 8000,
+  "pilot-e": 25000,
+};
+const SLOW_OVER_MS: Record<string, number> = {
+  "pilot-a": 45000,
+  "pilot-b": 70000,
+  "pilot-c": 25000,
+  "pilot-e": 70000,
+};
 const FAST_PACE = 2.5;
 const SLOW_PACE = 1;
+// Both "rate"-mechanic games (see games/registry.ts) use pace, not duration,
+// to pick a variant.
+const RATE_MECHANIC_GAME_IDS = new Set(["pilot-d", "pilot-f"]);
 
 export function resolveStoryVariant(gameId: string, result: RoundResult): string {
   const story = STORIES[gameId];
@@ -76,7 +115,7 @@ export function resolveStoryVariant(gameId: string, result: RoundResult): string
   const implementVariant = story.variants[implementTag];
   if (implementVariant) return implementVariant;
 
-  if (gameId === "pilot-d") {
+  if (RATE_MECHANIC_GAME_IDS.has(gameId)) {
     if (result.averagePace >= FAST_PACE && story.variants.fast) return story.variants.fast;
     if (result.averagePace <= SLOW_PACE && story.variants.slow) return story.variants.slow;
     return story.fallback;

@@ -38,7 +38,7 @@ export const CHARACTERS: CharacterDefinition[] = [
     accentColor: "#f9a8d4",
     intensityTolerance: "low",
     boredomRate: "fast",
-    gameIds: ["pilot-a", "pilot-c"],
+    gameIds: ["pilot-a", "pilot-c", "pilot-e", "pilot-f"],
   },
   {
     id: "ada",

@@ -3,6 +3,9 @@
 import { useCharacterAffinity } from "@/hooks/useCharacterAffinity";
 import { chaptersFor, getCurrentChapter, getNextChapter } from "@/lib/games/chapters";
 import type { CharacterDefinition } from "@/lib/characters/registry";
+import { SectionHeading, Eyebrow } from "@/components/ui/Heading";
+import { Card } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
 
 // Story mode sits ALONGSIDE free-play (this character's own pilot games
 // stay independently playable too) rather than replacing it — this card is

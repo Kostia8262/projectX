@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useEnergyContext } from "@/contexts/EnergyContext";
+import { useEnergyRefill } from "@/hooks/useEnergyRefill";
 import {
   implementsFor,
   stageForHeat,
@@ -15,8 +16,14 @@ import { OverrideControls } from "@/components/game/OverrideControls";
 import { applyRoundToCharacter } from "@/lib/characters/roundHook";
 import { getCharacterForGame } from "@/lib/characters/registry";
 import { isOverrideActive, type OverrideState } from "@/lib/characters/override";
-import { loadOverride, loadTraits } from "@/lib/characters/storage";
-import { isImplementBlocked, type TraitState } from "@/lib/characters/traits";
+import { loadFreshness, loadOverride, loadTraits } from "@/lib/characters/storage";
+import {
+  freshnessCharge,
+  implementBlockReason,
+  IMPLEMENT_BLOCK_MESSAGES,
+  type FreshnessState,
+  type TraitState,
+} from "@/lib/characters/traits";
 
 function heatLifetimeKey(address: string, gameId: string) {
   return `kink-spank-heat-lifetime-${gameId}-${address.toLowerCase()}`;
@@ -57,7 +64,8 @@ export function SpankGameRate({
   storyOverride?: GameStory;
   nextTeaser?: string;
 }) {
-  const { energy, max, spend, refill } = useEnergyContext();
+  const { energy, max, spend } = useEnergyContext();
+  const energyRefill = useEnergyRefill();
   const [heat, setHeat] = useState(0);
   const [phase, setPhase] = useState<Phase>("intro");
   const [finaleText, setFinaleText] = useState("");
@@ -71,6 +79,9 @@ export function SpankGameRate({
     () => (character ? loadOverride(address, character.id) : null)
   );
   const overriding = overrideState ? isOverrideActive(overrideState) : false;
+  const [freshness, setFreshness] = useState<FreshnessState | null>(
+    () => (character ? loadFreshness(address, character) : null)
+  );
   const [selectedId, setSelectedId] = useState(implements_[0]?.id);
   const selected = implements_.find((i) => i.id === selectedId) ?? implements_[0];
   const lifetimeRef = useRef(loadLifetimeHeat(address, game.id));
@@ -105,7 +116,7 @@ export function SpankGameRate({
 
   function handleTap() {
     if (!selected || outOfEnergy || phase !== "playing") return;
-    if (traits && character && isImplementBlocked(traits, character, selected, overriding)) return;
+    if (traits && character && implementBlockReason(traits, character, selected, overriding)) return;
 
     const now = performance.now();
     if (lastTapRef.current !== null) {
@@ -155,6 +166,7 @@ export function SpankGameRate({
       if (character) {
         setTraits(loadTraits(address, character));
         setOverrideState(loadOverride(address, character.id));
+        setFreshness(loadFreshness(address, character));
       }
       playFinaleSound();
       setPhase("finale");
@@ -236,15 +248,17 @@ export function SpankGameRate({
 
         <div className="flex flex-wrap items-center justify-center gap-2">
           {implements_.map((impl) => {
-            const blocked = traits && character ? isImplementBlocked(traits, character, impl, overriding) : false;
+            const reason = traits && character ? implementBlockReason(traits, character, impl, overriding) : null;
+            const blocked = reason !== null;
+            const charge = freshness ? freshnessCharge(freshness, impl.id) : 100;
             return (
               <button
                 key={impl.id}
                 onClick={() => !blocked && setSelectedId(impl.id)}
                 disabled={blocked}
                 data-testid={`implement-${impl.id}`}
-                title={blocked ? "Недоступно — слишком высокая дерзость" : undefined}
-                className={`flex h-14 w-20 flex-col items-center justify-center rounded-lg border text-[11px] font-medium transition ${
+                title={reason ? IMPLEMENT_BLOCK_MESSAGES[reason] : undefined}
+                className={`flex h-16 w-20 flex-col items-center justify-center rounded-lg border text-[11px] font-medium transition ${
                   blocked
                     ? "cursor-not-allowed border-white/5 bg-white/[0.01] text-neutral-600 opacity-50"
                     : selectedId === impl.id
@@ -257,6 +271,15 @@ export function SpankGameRate({
               >
                 <span className="mb-1 h-3 w-3 rounded-sm" style={{ backgroundColor: impl.color }} />
                 {impl.name}
+                <span
+                  className="mt-1 h-1 w-10 overflow-hidden rounded-full bg-white/10"
+                  title={`Свежесть: ${Math.round(charge)}%`}
+                >
+                  <span
+                    className="block h-full rounded-full transition-all"
+                    style={{ width: `${charge}%`, backgroundColor: impl.color }}
+                  />
+                </span>
               </button>
             );
           })}
@@ -268,14 +291,20 @@ export function SpankGameRate({
           </span>
           {outOfEnergy && (
             <button
-              onClick={refill}
+              onClick={energyRefill.buyRefill}
+              disabled={energyRefill.pending}
               data-testid="refill-button"
-              className="rounded-lg bg-gradient-to-r from-fuchsia-500 to-indigo-500 px-3 py-1 text-xs font-semibold text-white"
+              className="rounded-lg bg-gradient-to-r from-fuchsia-500 to-indigo-500 px-3 py-1 text-xs font-semibold text-white disabled:opacity-50"
             >
-              Пополнить
+              {energyRefill.pending ? "…" : `Пополнить (${energyRefill.cost} монет)`}
             </button>
           )}
         </div>
+        {energyRefill.error && (
+          <p className="text-xs text-rose-400" data-testid="refill-error">
+            {energyRefill.error}
+          </p>
+        )}
 
         {character && overrideState && (
           <OverrideControls

@@ -5,6 +5,8 @@ import { loadTraits } from "@/lib/characters/storage";
 import { relationshipStatusLine } from "@/lib/characters/traits";
 import { useCharacterAffinity } from "@/hooks/useCharacterAffinity";
 import { getCurrentChapter } from "@/lib/games/chapters";
+import { PageTitle } from "@/components/ui/Heading";
+import { Button } from "@/components/ui/Button";
 
 function statusColor(boredom: number, defiance: number): string {
   if (boredom > 60) return "text-amber-300";
@@ -49,7 +51,9 @@ function CharacterCard({
           <p className="text-xs font-semibold uppercase tracking-wide text-fuchsia-300/90 drop-shadow">
             {character.tagline}
           </p>
-          <h2 className="mt-1 text-3xl font-bold text-white drop-shadow-lg">{character.name}</h2>
+          <PageTitle as="h2" plain className="mt-1">
+            {character.name}
+          </PageTitle>
           <p className={`mt-2 text-sm ${statusColor(traits.boredom, traits.defiance)}`}>
             {isBored && <span className="mr-1">⏳</span>}
             {relationshipStatusLine(traits, character)}
@@ -59,16 +63,17 @@ function CharacterCard({
 
       <div className="flex items-center justify-between gap-3 border-t border-white/10 bg-black/20 px-5 py-3">
         <span className="truncate text-xs text-neutral-500">{currentChapter.chapterTitle}</span>
-        <button
+        <Button
           onClick={(e) => {
             e.stopPropagation();
             onPlayChapter(currentChapter.id);
           }}
           data-testid={`continue-${character.id}`}
-          className="shrink-0 rounded-lg bg-gradient-to-r from-fuchsia-500 to-indigo-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:brightness-110"
+          size="sm"
+          className="shrink-0"
         >
           Продолжить
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -86,9 +91,7 @@ export function CharacterSelect({
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6 py-10">
       <div className="text-center">
-        <h1 className="bg-gradient-to-r from-fuchsia-300 via-white to-indigo-300 bg-clip-text text-3xl font-bold text-transparent">
-          Персонажи
-        </h1>
+        <PageTitle>Персонажи</PageTitle>
         <p className="mt-2 text-sm text-neutral-400">
           У каждой — свой характер, свои механики и своя история.
         </p>

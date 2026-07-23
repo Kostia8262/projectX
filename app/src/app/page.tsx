@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { AgeGate } from "@/components/AgeGate";
 import { ConnectWallet } from "@/components/ConnectWallet";
 import { EnergyBadge } from "@/components/EnergyBadge";
@@ -15,16 +14,14 @@ import { AccessoryShop } from "@/components/shop/AccessoryShop";
 import { SubscriptionTiers } from "@/components/subscription/SubscriptionTiers";
 import { SubscriptionStatusBanner } from "@/components/SubscriptionStatusBanner";
 import { useSiweSession } from "@/hooks/useSiweSession";
-import { getGame } from "@/lib/games/registry";
+import { useEffectiveGame } from "@/hooks/useGameOverrides";
 import { getChapter } from "@/lib/games/chapters";
 import { getCharacter } from "@/lib/characters/registry";
-import { isAdminAddress } from "@/lib/admin";
 
 type View =
   | { kind: "characters" }
   | { kind: "character"; characterId: string }
   | { kind: "cabinet" }
-  | { kind: "settings" }
   | { kind: "shop" }
   | { kind: "subscription" }
   | { kind: "game"; gameId: string; chapterId?: string; characterId?: string };
@@ -56,7 +53,7 @@ function AuthenticatedApp({ address }: { address: string }) {
     }
   }
 
-  const activeGame = view.kind === "game" ? getGame(view.gameId) : undefined;
+  const activeGame = useEffectiveGame(view.kind === "game" ? view.gameId : undefined);
   const activeChapter =
     view.kind === "game" && view.chapterId ? getChapter(view.chapterId) : undefined;
   const activeCharacterPage = view.kind === "character" ? getCharacter(view.characterId) : undefined;
@@ -115,23 +112,18 @@ function AuthenticatedApp({ address }: { address: string }) {
           >
             Кабинет
           </button>
-          <button
-            onClick={() => setView({ kind: "settings" })}
-            className={`text-sm transition hover:text-white ${view.kind === "settings" ? "text-white" : "text-neutral-400"}`}
-          >
-            Настройки
-          </button>
-          {isAdminAddress(address) && (
-            <Link href="/admin" className="text-sm text-neutral-400 transition hover:text-white">
-              Админка
-            </Link>
-          )}
           <ConnectWallet />
         </div>
       </header>
       <main
         className={
-          inGame ? "flex flex-1 overflow-hidden" : "flex flex-1 items-center justify-center py-10"
+          inGame
+            ? "flex flex-1 overflow-hidden"
+            : // items-start (not items-center) on purpose: views with variable
+              // height (Cabinet's tabs especially) would otherwise re-center
+              // the whole block vertically on every height change, making the
+              // nav/content visibly jump instead of just resizing in place.
+              "flex flex-1 items-start justify-center overflow-y-auto py-10"
         }
       >
         {view.kind === "characters" ? (
@@ -155,8 +147,6 @@ function AuthenticatedApp({ address }: { address: string }) {
           />
         ) : view.kind === "cabinet" ? (
           <Cabinet address={address} />
-        ) : view.kind === "settings" ? (
-          <Settings address={address} />
         ) : view.kind === "shop" ? (
           <AccessoryShop />
         ) : view.kind === "subscription" ? (

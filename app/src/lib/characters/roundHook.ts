@@ -1,6 +1,6 @@
 import { getCharacterForGame } from "./registry";
 import { getImplement } from "../games/registry";
-import { isOverrideActive, isRecovering, recoveryHoursFor } from "./override";
+import { escalationMultiplier, isOverrideActive, isRecovering, recoveryHoursFor } from "./override";
 import { loadFreshness, loadOverride, loadTraits, saveFreshness, saveOverride, saveTraits } from "./storage";
 import {
   applyAftercareDebuff,
@@ -54,10 +54,12 @@ export function applyRoundToCharacter(
   if (overriding) {
     const roundsRemaining = override.roundsRemaining - 1;
     if (roundsRemaining <= 0) {
-      next = applyAftercareDebuff(next);
+      const escalation = escalationMultiplier(override.chainCount);
+      next = applyAftercareDebuff(next, escalation);
       saveOverride(address, character.id, {
         roundsRemaining: 0,
-        recoveryUntil: Date.now() + recoveryHoursFor(character) * 60 * 60 * 1000,
+        recoveryUntil: Date.now() + recoveryHoursFor(character) * escalation * 60 * 60 * 1000,
+        chainCount: override.chainCount,
       });
     } else {
       saveOverride(address, character.id, { ...override, roundsRemaining });

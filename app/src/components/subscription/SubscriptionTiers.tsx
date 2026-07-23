@@ -1,29 +1,24 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useWriteContract } from "wagmi";
 import { waitForTransactionReceipt } from "wagmi/actions";
 import { wagmiConfig } from "@/lib/wagmi";
 import { SUBSCRIPTION_TIERS } from "@/lib/subscription/tiers";
 import { useFreePlan } from "@/lib/subscription/freePlan";
+import { useSubscriptionStatus } from "@/lib/subscription/status";
 import { ERC20_APPROVE_ABI } from "@/lib/erc20Abi";
 import { SUBSCRIBE_ABI } from "@/lib/subscription/subscribeAbi";
+import { PageTitle, SectionHeading, Eyebrow } from "@/components/ui/Heading";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 
 const SUBSCRIPTION_CONTRACT_ADDRESS = process.env
   .NEXT_PUBLIC_SUBSCRIPTION_CONTRACT_ADDRESS as `0x${string}` | undefined;
 const PAYMENT_TOKEN_ADDRESS = process.env.NEXT_PUBLIC_PAYMENT_TOKEN_ADDRESS as
   | `0x${string}`
   | undefined;
-
-type SubscriptionStatus = { active: boolean; tierId: number | null };
-
-async function fetchSubscriptionStatus(): Promise<SubscriptionStatus> {
-  const res = await fetch("/api/subscription/status");
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error ?? "Не удалось загрузить статус подписки");
-  return data;
-}
 
 export function SubscriptionTiers() {
   const queryClient = useQueryClient();
@@ -32,7 +27,7 @@ export function SubscriptionTiers() {
   const [pendingTierId, setPendingTierId] = useState<number | null>(null);
   const [subscribeError, setSubscribeError] = useState<string | null>(null);
 
-  const statusQuery = useQuery({ queryKey: ["subscription-status"], queryFn: fetchSubscriptionStatus });
+  const statusQuery = useSubscriptionStatus();
   const activeTierId = statusQuery.data?.active ? statusQuery.data.tierId : null;
   const contractConfigured = Boolean(SUBSCRIPTION_CONTRACT_ADDRESS && PAYMENT_TOKEN_ADDRESS);
 
@@ -78,9 +73,7 @@ export function SubscriptionTiers() {
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-6 py-10">
       <div className="text-center">
-        <h1 className="bg-gradient-to-r from-fuchsia-300 via-white to-indigo-300 bg-clip-text text-3xl font-bold text-transparent">
-          Подписка
-        </h1>
+        <PageTitle>Подписка</PageTitle>
         <p className="mt-2 text-sm text-neutral-400">
           Четыре уровня доступа — от бесплатного знакомства до полного набора механик.
         </p>
@@ -107,21 +100,11 @@ export function SubscriptionTiers() {
                     : "border-white/10 bg-white/[0.06]"
               }`}
             >
-              {tier.highlighted && (
-                <span className="w-fit rounded-full bg-fuchsia-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-fuchsia-300">
-                  Популярный
-                </span>
-              )}
-              {tier.isFree && (
-                <span className="w-fit rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-300">
-                  Без оплаты
-                </span>
-              )}
+              {tier.highlighted && <Badge variant="highlight">Популярный</Badge>}
+              {tier.isFree && <Badge variant="success">Без оплаты</Badge>}
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-fuchsia-300/80">
-                  {tier.tagline}
-                </p>
-                <h2 className="mt-1 text-lg font-semibold text-white">{tier.name}</h2>
+                <Eyebrow>{tier.tagline}</Eyebrow>
+                <SectionHeading className="mt-1">{tier.name}</SectionHeading>
                 <p className="mt-1 text-2xl font-bold text-white">{tier.priceLabel}</p>
               </div>
               <ul className="flex-1 space-y-2 text-sm text-neutral-300">
@@ -133,23 +116,24 @@ export function SubscriptionTiers() {
                 ))}
               </ul>
               {tier.isFree ? (
-                <button
+                <Button
                   onClick={handleActivateFree}
                   disabled={freeActivated || activate.isPending}
                   data-testid={`subscribe-${tier.id}`}
-                  className="w-full rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-900/30 transition hover:brightness-110 disabled:opacity-60"
+                  variant="success"
+                  className="w-full"
                 >
                   {freeActivated ? "Активирован" : "Начать бесплатно"}
-                </button>
+                </Button>
               ) : (
-                <button
+                <Button
                   onClick={() => handleSubscribe(tier.contractTierId, tier.priceTokenAmount!)}
                   disabled={!contractConfigured || isActive || isPending}
                   data-testid={`subscribe-${tier.id}`}
-                  className="w-full rounded-xl bg-gradient-to-r from-fuchsia-500 to-indigo-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-fuchsia-900/30 transition hover:brightness-110 disabled:opacity-60"
+                  className="w-full"
                 >
                   {isActive ? "Активна" : isPending ? "Оформление…" : "Оформить"}
-                </button>
+                </Button>
               )}
             </div>
           );

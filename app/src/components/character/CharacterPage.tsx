@@ -2,10 +2,13 @@
 
 import { useState } from "react";
 import type { CharacterDefinition } from "@/lib/characters/registry";
-import { loadTraits } from "@/lib/characters/storage";
+import { isOverrideActive, isRecovering } from "@/lib/characters/override";
+import { loadOverride, loadTraits } from "@/lib/characters/storage";
 import { relationshipStatusLine, type TraitState } from "@/lib/characters/traits";
-import { GAMES } from "@/lib/games/registry";
+import { useEffectiveGames } from "@/hooks/useGameOverrides";
 import { StoryModeCard } from "@/components/game/StoryModeCard";
+import { PageTitle, SectionHeading, Eyebrow } from "@/components/ui/Heading";
+import { Card } from "@/components/ui/Card";
 
 type TraitBarSpec = {
   key: keyof Omit<TraitState, "lastActiveAt">;
@@ -38,7 +41,20 @@ export function CharacterPage({
   onBack: () => void;
 }) {
   const [traits] = useState<TraitState>(() => loadTraits(address, character));
-  const games = GAMES.filter((g) => character.gameIds.includes(g.id) && g.status === "available");
+  const [overrideState] = useState(() => loadOverride(address, character.id));
+  const games = useEffectiveGames().filter(
+    (g) => character.gameIds.includes(g.id) && g.status === "available"
+  );
+
+  // Being mid-scene or mid-aftercare is more specific/urgent than the
+  // generic trait-threshold buckets relationshipStatusLine falls back to —
+  // show it with priority rather than let it get silently swallowed by
+  // whichever Boredom/Defiance bucket she also happens to be in right now.
+  const statusLine = isOverrideActive(overrideState)
+    ? `${character.name} — сцена без ограничений в разгаре (осталось раундов: ${overrideState.roundsRemaining}).`
+    : isRecovering(overrideState)
+      ? `${character.name} ещё приходит в себя после интенсивной сцены — будьте бережнее.`
+      : relationshipStatusLine(traits, character);
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 py-10">
@@ -49,22 +65,22 @@ export function CharacterPage({
         ← Персонажи
       </button>
 
-      <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-6 shadow-xl shadow-black/30 backdrop-blur-2xl">
-        <p className="text-xs font-semibold uppercase tracking-wide text-fuchsia-300/80">
-          {character.tagline}
-        </p>
-        <h1 className="mt-1 text-2xl font-bold text-white">{character.name}</h1>
+      <Card size="lg">
+        <Eyebrow>{character.tagline}</Eyebrow>
+        <PageTitle className="mt-1">{character.name}</PageTitle>
         <p className="mt-3 text-sm leading-relaxed text-neutral-300">{character.bio}</p>
         <p
           className="mt-4 text-sm font-medium text-indigo-300"
           data-testid="relationship-status"
         >
-          {relationshipStatusLine(traits, character)}
+          {statusLine}
         </p>
-      </div>
+      </Card>
 
-      <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-6 shadow-xl shadow-black/30 backdrop-blur-2xl">
-        <p className="mb-4 text-sm font-medium text-white">Черты</p>
+      <Card size="lg">
+        <SectionHeading dense className="mb-4">
+          Черты
+        </SectionHeading>
         <div className="flex flex-col gap-3">
           {TRAIT_BARS.map((bar) => {
             const value = traits[bar.key];
@@ -101,13 +117,15 @@ export function CharacterPage({
             <p className="mt-1 text-sm text-neutral-300">{character.dislikedNote}</p>
           </div>
         </div>
-      </div>
+      </Card>
 
       <StoryModeCard address={address} character={character} onPlayChapter={onPlayChapter} />
 
       {games.length > 0 && (
-        <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-5 shadow-xl shadow-black/30 backdrop-blur-2xl">
-          <p className="mb-3 text-sm font-medium text-white">Свободная игра</p>
+        <Card>
+          <SectionHeading dense className="mb-3">
+            Свободная игра
+          </SectionHeading>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {games.map((game) => (
               <button
@@ -116,14 +134,12 @@ export function CharacterPage({
                 data-testid={`play-${game.id}`}
                 className="rounded-xl border border-white/10 bg-white/[0.03] p-4 text-left transition hover:border-white/20 hover:bg-white/[0.08]"
               >
-                <p className="text-xs font-semibold uppercase tracking-wide text-fuchsia-300/80">
-                  {game.tagline}
-                </p>
+                <Eyebrow>{game.tagline}</Eyebrow>
                 <p className="mt-1 text-sm font-medium text-white">{game.title}</p>
               </button>
             ))}
           </div>
-        </div>
+        </Card>
       )}
     </div>
   );
