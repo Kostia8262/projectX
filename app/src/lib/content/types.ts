@@ -37,13 +37,35 @@ export type ChapterRecord = {
   // Absent on order-1 (no fork yet). Present on every order-2/3/4 variant —
   // answering it appends one more character to the player's branch path.
   decision?: ChapterDecision;
-  // Pool of short in-character reaction lines the girl can "say" mid-round —
-  // shown as a fading popup (components/game/CharacterHint.tsx) when the
-  // player tries a blocked implement or crosses into a new heat stage. One
-  // is picked at random (never the same one twice in a row) each time a
-  // trigger fires, so this stays a flavor pool, not a numbered sequence.
-  hints: string[];
+  hints: ChapterHints;
 };
+
+// Short in-character reaction lines the girl can "say" mid-round, shown as a
+// fading popup (components/game/CharacterHint.tsx). Each line is anchored to
+// a specific in-game moment rather than floating in one flat pool — that's
+// what makes the admin timeline (admin/chapters/ChapterForm.tsx) legible:
+// every reply on screen has one obvious trigger.
+export type ChapterHints = {
+  // One bucket per lib/games/registry.ts's HEAT_STAGES entry, same order and
+  // length (index 0 = "Спокойно" ... index 4 = "Предел") — a line from
+  // bucket N is shown when the player's heat crosses into stage N during a
+  // round. HEAT_STAGES is a fixed, shared timeline (same 5 stages for every
+  // game), so this shape needs no chapter-specific stage list of its own.
+  stage: [string[], string[], string[], string[], string[]];
+  // Shown instead when the player taps while their selected implement is
+  // blocked (trait/freshness gate, lib/characters/traits.ts) — a separate
+  // "moment" from the heat timeline since it can happen at any stage.
+  blocked: string[];
+};
+
+// Same order as ChapterHints.stage — kept here (not derived from
+// games/registry.ts's HEAT_STAGES.length) so content/types.ts has no runtime
+// dependency on games/registry.ts, only a number both sides agree on.
+export const CHAPTER_HINT_STAGE_COUNT = 5;
+
+export function emptyChapterHints(): ChapterHints {
+  return { stage: [[], [], [], [], []], blocked: [] };
+}
 
 // No `id` yet — the store assigns one on create.
 export type ChapterInput = Omit<ChapterRecord, "id">;

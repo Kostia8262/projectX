@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type { ChapterHints } from "@/lib/content/types";
 
 // How long a hint stays fully visible before starting to fade, and how long
 // the fade-to-transparent transition itself takes (matches the duration-*
@@ -8,11 +9,11 @@ import { useEffect, useRef, useState } from "react";
 const VISIBLE_MS = 2200;
 const FADE_MS = 700;
 
-// Drives one "she just said something" popup — a random line from the
-// chapter's `hints` pool (lib/content/types.ts), shown for a couple seconds
-// then faded to transparent, never fully removed from the DOM (so the fade
-// transition can actually run instead of popping out instantly).
-export function useCharacterHint(pool: string[]) {
+// Drives one "she just said something" popup — a random line from whichever
+// bucket of the chapter's `hints` (lib/content/types.ts) fired, shown for a
+// couple seconds then faded to transparent, never fully removed from the DOM
+// (so the fade transition can actually run instead of popping out instantly).
+export function useCharacterHint(hints?: ChapterHints) {
   const [text, setText] = useState<string | null>(null);
   const [visible, setVisible] = useState(false);
   const lastRef = useRef<string | null>(null);
@@ -24,7 +25,7 @@ export function useCharacterHint(pool: string[]) {
     };
   }, []);
 
-  function trigger() {
+  function trigger(pool: string[]) {
     if (pool.length === 0) return;
     let pick = pool[Math.floor(Math.random() * pool.length)];
     if (pool.length > 1) {
@@ -38,7 +39,17 @@ export function useCharacterHint(pool: string[]) {
     hideTimerRef.current = setTimeout(() => setVisible(false), VISIBLE_MS);
   }
 
-  return { text, visible, trigger };
+  // stageIndex matches games/registry.ts's HEAT_STAGES order (0 = "Спокойно"
+  // ... 4 = "Предел") — see stage change handling in SpankGame/SpankGameRate.
+  function triggerStage(stageIndex: number) {
+    trigger(hints?.stage[stageIndex] ?? []);
+  }
+
+  function triggerBlocked() {
+    trigger(hints?.blocked ?? []);
+  }
+
+  return { text, visible, triggerStage, triggerBlocked };
 }
 
 // Rendered inside a `relative` game container — absolutely positioned so it

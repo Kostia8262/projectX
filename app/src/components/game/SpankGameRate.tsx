@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useEnergyContext } from "@/contexts/EnergyContext";
 import { useEnergyRefill } from "@/hooks/useEnergyRefill";
 import {
+  HEAT_STAGES,
   implementsFor,
   stageForHeat,
   paceForRate,
@@ -23,7 +24,7 @@ import { getCharacterForGame } from "@/lib/characters/registry";
 import { isOverrideActive, type OverrideState } from "@/lib/characters/override";
 import { loadFreshness, loadOverride, loadTraits } from "@/lib/characters/storage";
 import { recordBranchChoice } from "@/lib/characters/branch";
-import type { ChapterDecision } from "@/lib/content/types";
+import type { ChapterDecision, ChapterHints } from "@/lib/content/types";
 import {
   freshnessCharge,
   implementBlockReason,
@@ -75,7 +76,7 @@ export function SpankGameRate({
   nextTeaser?: string;
   decision?: ChapterDecision;
   decisionIndex?: number;
-  hints?: string[];
+  hints?: ChapterHints;
 }) {
   const { energy, max, spend } = useEnergyContext();
   const energyRefill = useEnergyRefill();
@@ -110,7 +111,7 @@ export function SpankGameRate({
   // storyOverride lets "chapter mode" (see chapters.ts) reuse this same
   // mechanic with a different narrative than the pilot's own default story.
   const story = storyOverride ?? STORIES[game.id];
-  const { text: hintText, visible: hintVisible, trigger: triggerHint } = useCharacterHint(hints ?? []);
+  const { text: hintText, visible: hintVisible, triggerStage, triggerBlocked } = useCharacterHint(hints);
 
   const heatStage = stageForHeat((heat / game.maxHeat) * 100);
   const paceStage = paceForRate(rate);
@@ -132,7 +133,7 @@ export function SpankGameRate({
   function handleTap() {
     if (!selected || outOfEnergy || phase !== "playing") return;
     if (traits && character && implementBlockReason(traits, character, selected, overriding)) {
-      triggerHint();
+      triggerBlocked();
       return;
     }
 
@@ -168,7 +169,7 @@ export function SpankGameRate({
     if (nextStage.label !== stageRef.current.label) {
       stageRef.current = nextStage;
       playReactionSound();
-      triggerHint();
+      triggerStage(HEAT_STAGES.indexOf(nextStage));
     }
 
     if (next >= game.maxHeat) {

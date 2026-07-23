@@ -3,13 +3,13 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CHARACTERS } from "@/lib/characters/registry";
-import { GAMES, IMPLEMENTS } from "@/lib/games/registry";
+import { GAMES, HEAT_STAGES, IMPLEMENTS } from "@/lib/games/registry";
 import type { GameStory, StoryBeat, StoryTag } from "@/lib/games/stories";
-import type { ChapterRecord } from "@/lib/content/types";
+import { emptyChapterHints, type ChapterHints, type ChapterRecord } from "@/lib/content/types";
 import { SectionHeading } from "@/components/ui/Heading";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Input, FORM_CONTROL_CLASS } from "@/components/ui/Input";
+import { Input, FORM_CONTROL_CLASS, SELECT_CLASS } from "@/components/ui/Input";
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
@@ -42,7 +42,7 @@ type FormState = {
   decisionEnabled: boolean;
   decisionPrompt: StoryBeat;
   decisionOptions: [DecisionOptionForm, DecisionOptionForm];
-  hints: string[];
+  hints: ChapterHints;
 };
 
 function emptyBeat(): StoryBeat {
@@ -94,7 +94,10 @@ function formFor(chapter: ChapterRecord): FormState {
           { label: chapter.decision.options[1].label, result: chapter.decision.options[1].result },
         ]
       : emptyDecisionOptions(),
-    hints: [...chapter.hints],
+    hints: {
+      stage: chapter.hints.stage.map((bucket) => [...bucket]) as ChapterHints["stage"],
+      blocked: [...chapter.hints.blocked],
+    },
   };
 }
 
@@ -117,7 +120,7 @@ function blankForm(): FormState {
     decisionEnabled: false,
     decisionPrompt: emptyBeat(),
     decisionOptions: emptyDecisionOptions(),
-    hints: [],
+    hints: emptyChapterHints(),
   };
 }
 
@@ -185,6 +188,58 @@ function ImageUploadField({
   );
 }
 
+// One "moment" row's hint pool — a handful of interchangeable lines, any of
+// which might fire when that moment happens. Reused for each heat-stage
+// bucket and for the "заблокировано" bucket (see the timeline below).
+function HintBucketEditor({
+  values,
+  onChange,
+  addTestId,
+  fieldTestId,
+  removeTestId,
+}: {
+  values: string[];
+  onChange: (next: string[]) => void;
+  addTestId: string;
+  fieldTestId: (i: number) => string;
+  removeTestId: (i: number) => string;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      {values.map((hint, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <Input
+            value={hint}
+            onChange={(e) => {
+              const next = [...values];
+              next[i] = e.target.value;
+              onChange(next);
+            }}
+            data-testid={fieldTestId(i)}
+            className="flex-1"
+          />
+          <button
+            type="button"
+            onClick={() => onChange(values.filter((_, idx) => idx !== i))}
+            data-testid={removeTestId(i)}
+            className="text-xs text-rose-400 hover:text-rose-300"
+          >
+            Убрать
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={() => onChange([...values, ""])}
+        data-testid={addTestId}
+        className="self-start text-xs text-neutral-500 transition hover:text-white"
+      >
+        + добавить реплику
+      </button>
+    </div>
+  );
+}
+
 // Full editor for one chapter variant — used by both /admin/chapters/new
 // (no `chapter` prop, starts blank) and /admin/chapters/[id] (existing
 // chapter, pre-filled). `onDone` fires after a successful save or delete so
@@ -222,7 +277,10 @@ export function ChapterForm({
       nextTeaser: f.nextTeaser,
       story: buildStory(f),
       branchPath: f.branchPath,
-      hints: f.hints.filter((h) => h.trim()),
+      hints: {
+        stage: f.hints.stage.map((bucket) => bucket.filter((h) => h.trim())) as ChapterHints["stage"],
+        blocked: f.hints.blocked.filter((h) => h.trim()),
+      },
       decision: f.decisionEnabled
         ? {
             prompt: f.decisionPrompt,
@@ -309,7 +367,7 @@ export function ChapterForm({
               setForm({ ...form, characterId, gameId: firstChapterGame?.id ?? form.gameId });
             }}
             data-testid="admin-chapter-character"
-            className={FORM_CONTROL_CLASS}
+            className={SELECT_CLASS}
           >
             {CHARACTERS.map((c) => (
               <option key={c.id} value={c.id}>
@@ -325,7 +383,7 @@ export function ChapterForm({
             value={form.gameId}
             onChange={(e) => setForm({ ...form, gameId: e.target.value })}
             data-testid="admin-chapter-game"
-            className={FORM_CONTROL_CLASS}
+            className={SELECT_CLASS}
           >
             {gameOptions.map((g) => (
               <option key={g.id} value={g.id}>
@@ -461,7 +519,7 @@ export function ChapterForm({
                       setForm({ ...form, variants: next });
                     }}
                     data-testid={`admin-chapter-variant-tag-${i}`}
-                    className={FORM_CONTROL_CLASS}
+                    className={SELECT_CLASS}
                   >
                     <option value="fast">Быстро</option>
                     <option value="slow">Медленно</option>
@@ -475,7 +533,7 @@ export function ChapterForm({
                         next[i] = { ...row, tag: `implement-${e.target.value}` };
                         setForm({ ...form, variants: next });
                       }}
-                      className={FORM_CONTROL_CLASS}
+                      className={SELECT_CLASS}
                     >
                       {IMPLEMENTS.map((impl) => (
                         <option key={impl.id} value={impl.id}>
@@ -525,47 +583,57 @@ export function ChapterForm({
       </div>
 
       <div className="mt-4 border-t border-white/10 pt-4">
-        <div className="mb-2 flex items-center justify-between">
-          <SectionHeading dense>Подсказки-реакции (всплывающие на пару секунд)</SectionHeading>
-          <Button
-            onClick={() => setForm({ ...form, hints: [...form.hints, ""] })}
-            variant="secondary"
-            size="sm"
-            data-testid="admin-chapter-add-hint"
-          >
-            Добавить реплику
-          </Button>
-        </div>
-        <p className="mb-2 text-xs text-neutral-500">
-          Короткие фразы от лица персонажа — показываются игроку случайной всплывающей подсказкой,
-          когда он пробует заблокированное орудие или когда сцена переходит на новую стадию.
+        <SectionHeading dense className="mb-1">
+          Подсказки-реакции (всплывающие на пару секунд)
+        </SectionHeading>
+        <p className="mb-4 text-xs text-neutral-500">
+          Слева — момент по ходу раунда, справа — реплики, любая из которых может всплыть именно в
+          этот момент (случайно, без повтора предыдущей).
         </p>
-        <div className="flex flex-col gap-2">
-          {form.hints.map((hint, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <Input
-                value={hint}
-                onChange={(e) => {
-                  const next = [...form.hints];
-                  next[i] = e.target.value;
-                  setForm({ ...form, hints: next });
-                }}
-                data-testid={`admin-chapter-hint-${i}`}
-                className="flex-1"
-              />
-              <button
-                type="button"
-                onClick={() => setForm({ ...form, hints: form.hints.filter((_, idx) => idx !== i) })}
-                data-testid={`admin-chapter-remove-hint-${i}`}
-                className="text-xs text-rose-400 hover:text-rose-300"
-              >
-                Убрать
-              </button>
+
+        <div className="relative flex flex-col">
+          <div className="pointer-events-none absolute left-[7px] top-2 bottom-7 w-px bg-white/10" />
+
+          {HEAT_STAGES.map((stageDef, i) => (
+            <div key={stageDef.label} className="relative flex gap-4 pb-5">
+              <div className="flex w-28 shrink-0 items-start gap-2 pt-0.5">
+                <span
+                  className="relative z-10 mt-0.5 h-3.5 w-3.5 shrink-0 rounded-full border-2 border-neutral-950"
+                  style={{ backgroundColor: stageDef.color }}
+                />
+                <span className="text-xs font-medium text-neutral-300">{stageDef.label}</span>
+              </div>
+              <div className="min-w-0 flex-1">
+                <HintBucketEditor
+                  values={form.hints.stage[i]}
+                  onChange={(next) => {
+                    const stage = [...form.hints.stage] as ChapterHints["stage"];
+                    stage[i] = next;
+                    setForm({ ...form, hints: { ...form.hints, stage } });
+                  }}
+                  addTestId={`admin-chapter-add-hint-stage-${i}`}
+                  fieldTestId={(j) => `admin-chapter-hint-stage-${i}-${j}`}
+                  removeTestId={(j) => `admin-chapter-remove-hint-stage-${i}-${j}`}
+                />
+              </div>
             </div>
           ))}
-          {form.hints.length === 0 && (
-            <p className="text-xs text-neutral-500">Пока нет реплик для этой главы.</p>
-          )}
+
+          <div className="relative flex gap-4">
+            <div className="flex w-28 shrink-0 items-start gap-2 pt-0.5">
+              <span className="relative z-10 mt-0.5 h-3.5 w-3.5 shrink-0 rounded-full border-2 border-neutral-950 bg-neutral-600" />
+              <span className="text-xs font-medium text-neutral-300">Заблокировано</span>
+            </div>
+            <div className="min-w-0 flex-1">
+              <HintBucketEditor
+                values={form.hints.blocked}
+                onChange={(next) => setForm({ ...form, hints: { ...form.hints, blocked: next } })}
+                addTestId="admin-chapter-add-hint-blocked"
+                fieldTestId={(j) => `admin-chapter-hint-blocked-${j}`}
+                removeTestId={(j) => `admin-chapter-remove-hint-blocked-${j}`}
+              />
+            </div>
+          </div>
         </div>
       </div>
 

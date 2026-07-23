@@ -3,9 +3,10 @@
 import { useRef, useState } from "react";
 import { useEnergyContext } from "@/contexts/EnergyContext";
 import { useEnergyRefill } from "@/hooks/useEnergyRefill";
-import { implementsFor, stageForHeat, type GameDefinition } from "@/lib/games/registry";
+import { HEAT_STAGES, implementsFor, stageForHeat, type GameDefinition } from "@/lib/games/registry";
 import { spankButtonBackground } from "@/lib/games/style";
 import { STORIES, resolveStoryVariant, type GameStory, type StoryBeat } from "@/lib/games/stories";
+import { classifySessionQuality, type TapOutcome } from "@/lib/games/sessionQuality";
 import { playTapSound, playReactionSound, playFinaleSound } from "@/lib/sound";
 import { CharacterStage } from "@/components/game/CharacterStage";
 import { OverrideControls } from "@/components/game/OverrideControls";
@@ -18,7 +19,7 @@ import { getCharacterForGame } from "@/lib/characters/registry";
 import { isOverrideActive, type OverrideState } from "@/lib/characters/override";
 import { loadFreshness, loadOverride, loadTraits } from "@/lib/characters/storage";
 import { recordBranchChoice } from "@/lib/characters/branch";
-import type { ChapterDecision } from "@/lib/content/types";
+import type { ChapterDecision, ChapterHints } from "@/lib/content/types";
 import {
   freshnessCharge,
   implementBlockReason,
@@ -55,7 +56,7 @@ export function SpankGame({
   nextTeaser?: string;
   decision?: ChapterDecision;
   decisionIndex?: number;
-  hints?: string[];
+  hints?: ChapterHints;
 }) {
   const { energy, max, spend } = useEnergyContext();
   const energyRefill = useEnergyRefill();
@@ -85,7 +86,7 @@ export function SpankGame({
   // storyOverride lets "chapter mode" (see chapters.ts) reuse this same
   // mechanic with a different narrative than the pilot's own default story.
   const story = storyOverride ?? STORIES[game.id];
-  const { text: hintText, visible: hintVisible, trigger: triggerHint } = useCharacterHint(hints ?? []);
+  const { text: hintText, visible: hintVisible, triggerStage, triggerBlocked } = useCharacterHint(hints);
 
   const stage = stageForHeat((heat / game.maxHeat) * 100);
   const outOfEnergy = energy <= 0;
@@ -93,7 +94,7 @@ export function SpankGame({
   function handleTap() {
     if (!selected || outOfEnergy || phase !== "playing") return;
     if (traits && character && implementBlockReason(traits, character, selected, overriding)) {
-      triggerHint();
+      triggerBlocked();
       return;
     }
     if (!spend(1)) return;
@@ -115,7 +116,7 @@ export function SpankGame({
     if (nextStage.label !== stageRef.current.label) {
       stageRef.current = nextStage;
       playReactionSound();
-      triggerHint();
+      triggerStage(HEAT_STAGES.indexOf(nextStage));
     }
 
     if (next >= game.maxHeat) {

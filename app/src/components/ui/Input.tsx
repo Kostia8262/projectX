@@ -9,6 +9,13 @@ import type { InputHTMLAttributes } from "react";
 export const FORM_CONTROL_CLASS =
   "rounded-xl border border-white/10 bg-black/20 px-3 py-1.5 text-xs text-white outline-none focus:border-fuchsia-400/50";
 
+// For <select> specifically — Chromium's native dropdown arrow (especially
+// with the dark color-scheme set globally, see globals.css) renders flush
+// against the box edge regardless of the element's own padding, ignoring
+// FORM_CONTROL_CLASS's px-3. `.admin-select` (globals.css) swaps it for a
+// custom arrow with real breathing room via appearance:none.
+export const SELECT_CLASS = `${FORM_CONTROL_CLASS} admin-select`;
+
 export function Input({
   className = "",
   ...rest

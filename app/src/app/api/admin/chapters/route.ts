@@ -3,7 +3,13 @@ import { canEditGames } from "@/lib/admin/roles";
 import { CHARACTERS } from "@/lib/characters/registry";
 import { GAMES, IMPLEMENTS } from "@/lib/games/registry";
 import type { GameStory, StoryBeat } from "@/lib/games/stories";
-import type { ChapterDecision, ChapterDecisionOption, ChapterInput } from "@/lib/content/types";
+import {
+  CHAPTER_HINT_STAGE_COUNT,
+  type ChapterDecision,
+  type ChapterDecisionOption,
+  type ChapterHints,
+  type ChapterInput,
+} from "@/lib/content/types";
 import { createChapter, updateChapter, deleteChapter } from "@/lib/content/store";
 
 const CHARACTER_IDS = new Set(CHARACTERS.map((c) => c.id));
@@ -87,11 +93,10 @@ function parseDecision(raw: unknown): ChapterDecision | null | undefined {
 }
 
 // Every entry must be non-blank — an empty string would render as a blank
-// fade-in popup mid-round (see components/game/CharacterHint.tsx). The array
-// itself may be empty (chapter just has no hints yet); that's the only
-// gap CharacterHint accepts silently (it never triggers).
-function parseHints(raw: unknown): string[] | null {
-  if (raw === undefined) return [];
+// fade-in popup mid-round (see components/game/CharacterHint.tsx). An empty
+// bucket is fine (that moment just has no line yet); that's the only gap
+// CharacterHint accepts silently (it never triggers for an empty bucket).
+function parseHintList(raw: unknown): string[] | null {
   if (!Array.isArray(raw)) return null;
   const hints: string[] = [];
   for (const value of raw) {
@@ -99,6 +104,29 @@ function parseHints(raw: unknown): string[] | null {
     hints.push(value);
   }
   return hints;
+}
+
+// `stage` must line up 1:1 with games/registry.ts's HEAT_STAGES — exactly
+// CHAPTER_HINT_STAGE_COUNT buckets, in order, so the admin timeline and the
+// in-round trigger (SpankGame's stageForHeat) always agree on which bucket
+// is "Стонет" vs "Умоляет".
+function parseHints(raw: unknown): ChapterHints | null {
+  if (raw === undefined) return { stage: [[], [], [], [], []], blocked: [] };
+  if (typeof raw !== "object" || raw === null) return null;
+  const r = raw as Record<string, unknown>;
+
+  if (!Array.isArray(r.stage) || r.stage.length !== CHAPTER_HINT_STAGE_COUNT) return null;
+  const stage: string[][] = [];
+  for (const bucket of r.stage) {
+    const parsed = parseHintList(bucket);
+    if (!parsed) return null;
+    stage.push(parsed);
+  }
+
+  const blocked = parseHintList(r.blocked);
+  if (!blocked) return null;
+
+  return { stage: stage as ChapterHints["stage"], blocked };
 }
 
 function parseChapterInput(body: unknown): ChapterInput | null {
