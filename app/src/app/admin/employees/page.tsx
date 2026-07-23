@@ -3,6 +3,10 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { EmployeeRow } from "@/app/api/admin/employees/route";
+import { SectionHeading } from "@/components/ui/Heading";
+import { Card } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
 
 type AdminLogEntry = { at: number; admin: string; action: string; address: string; detail: string };
 
@@ -58,7 +62,9 @@ export default function EmployeesPage() {
   return (
     <div className="flex flex-col gap-8">
       <div>
-        <h2 className="mb-2 text-sm font-semibold text-white">Сотрудники (доступ в админку)</h2>
+        <SectionHeading dense className="mb-2">
+          Сотрудники (доступ в админку)
+        </SectionHeading>
         <p className="mb-3 text-xs text-neutral-500">
           «Изначальный список» — жёстко зашитые адреса в <code>lib/admin.ts</code>, их нельзя
           убрать через UI (страховка от случайной блокировки самого себя). Остальные выданы через
@@ -105,7 +111,7 @@ export default function EmployeesPage() {
                         onClick={() => removeEmployee.mutate(e.address)}
                         disabled={removeEmployee.isPending}
                         data-testid={`admin-remove-employee-${e.address}`}
-                        className="text-rose-400 hover:text-rose-300 disabled:opacity-50"
+                        className="font-sans text-rose-400 hover:text-rose-300 disabled:opacity-50"
                       >
                         Убрать
                       </button>

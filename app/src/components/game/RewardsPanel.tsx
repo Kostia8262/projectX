@@ -3,6 +3,9 @@
 import { useState } from "react";
 import { REWARDS } from "@/lib/rewards/registry";
 import { useSharedAffinity } from "@/hooks/useSharedAffinity";
+import { SectionHeading } from "@/components/ui/Heading";
+import { Card, Tile } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
 
 type RevealState =
   | { status: "idle" }
@@ -41,9 +44,9 @@ export function RewardsPanel({ address }: { address: string }) {
 
   return (
     <div className="w-full">
-      <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-5 shadow-xl shadow-black/30 backdrop-blur-2xl">
+      <Card>
         <div className="flex items-center justify-between">
-          <p className="text-sm font-medium text-white">Прогресс отклика</p>
+          <SectionHeading dense>Прогресс отклика</SectionHeading>
           <p className="text-sm font-semibold tabular-nums text-fuchsia-300">
             {Math.floor(affinity)}
             {nextReward && (
@@ -86,19 +89,16 @@ export function RewardsPanel({ address }: { address: string }) {
             const state = reveals[reward.id] ?? { status: "idle" };
 
             return (
-              <div
-                key={reward.id}
-                className="flex flex-col items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-center"
-              >
+              <Tile key={reward.id} className="flex flex-col items-center gap-2 text-center">
                 {state.status === "shown" ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={state.url}
                     alt={reward.title}
-                    className="h-32 w-24 rounded-lg object-cover"
+                    className="h-32 w-24 rounded-xl object-cover"
                   />
                 ) : (
-                  <div className="flex h-32 w-24 items-center justify-center rounded-lg border border-dashed border-white/15 bg-black/20 text-2xl">
+                  <div className="flex h-32 w-24 items-center justify-center rounded-xl border border-dashed border-white/15 bg-black/20 text-2xl">
                     {unlocked ? "🔓" : "🔒"}
                   </div>
                 )}
@@ -106,24 +106,24 @@ export function RewardsPanel({ address }: { address: string }) {
                 {state.status === "shown" ? (
                   <p className="text-[11px] text-emerald-400">Открыто</p>
                 ) : unlocked ? (
-                  <button
+                  <Button
                     onClick={() => reveal(reward.id)}
                     disabled={state.status === "loading"}
-                    className="rounded-lg bg-gradient-to-r from-fuchsia-500 to-indigo-500 px-3 py-1 text-[11px] font-semibold text-white disabled:opacity-50"
+                    size="sm"
                   >
                     {state.status === "loading" ? "…" : "Открыть"}
-                  </button>
+                  </Button>
                 ) : (
                   <p className="text-[11px] text-neutral-500">нужно {reward.threshold}</p>
                 )}
                 {state.status === "error" && (
                   <p className="text-[11px] text-red-400">{state.message}</p>
                 )}
-              </div>
+              </Tile>
             );
           })}
         </div>
-      </div>
+      </Card>
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
+import { PageTitle } from "@/components/ui/Heading";
 
 type WhoAmI =
   | { isAdmin: true; address: string }
@@ -59,9 +60,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6 py-10">
       <div>
-        <h1 className="bg-gradient-to-r from-fuchsia-300 via-white to-indigo-300 bg-clip-text text-2xl font-bold text-transparent">
-          Админка
-        </h1>
+        <PageTitle>Админка</PageTitle>
         <p className="mt-1 text-sm text-neutral-400">
           Минимальный инструмент поддержки/тестирования — кошельки, доступ сотрудников, история
           платежей.

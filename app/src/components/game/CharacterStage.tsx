@@ -18,7 +18,7 @@ export function CharacterStage({
 }) {
   return (
     <div
-      className="relative flex min-h-[320px] flex-1 items-center justify-center overflow-hidden rounded-3xl border border-white/10 bg-black/30"
+      className="relative flex min-h-[320px] flex-1 items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-black/30"
       data-testid="character-stage"
     >
       <div

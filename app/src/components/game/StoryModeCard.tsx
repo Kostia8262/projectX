@@ -27,21 +27,17 @@ export function StoryModeCard({
   const isLastChapter = current.order === chapters.length;
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-5 shadow-xl shadow-black/30 backdrop-blur-2xl">
+    <Card>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-indigo-300/80">
+          <Eyebrow>
             Сюжет · глава {current.order}{isLastChapter ? " (финальная)" : ` из ${chapters.length}`}
-          </p>
-          <h2 className="mt-1 text-lg font-semibold text-white">{current.chapterTitle}</h2>
+          </Eyebrow>
+          <SectionHeading className="mt-1">{current.chapterTitle}</SectionHeading>
         </div>
-        <button
-          onClick={() => onPlayChapter(current.id)}
-          data-testid="play-chapter"
-          className="rounded-xl bg-gradient-to-r from-fuchsia-500 to-indigo-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-fuchsia-900/30 transition hover:brightness-110"
-        >
+        <Button onClick={() => onPlayChapter(current.id)} data-testid="play-chapter">
           Играть главу
-        </button>
+        </Button>
       </div>
       {next && (
         <p className="mt-3 text-[11px] text-neutral-500">
@@ -49,6 +45,6 @@ export function StoryModeCard({
           {Math.floor(affinity)}).
         </p>
       )}
-    </div>
+    </Card>
   );
 }

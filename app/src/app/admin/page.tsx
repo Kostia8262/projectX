@@ -5,6 +5,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ACCESSORIES, getAccessory } from "@/lib/shop/accessories";
 import { SUBSCRIPTION_TIERS } from "@/lib/subscription/tiers";
 import type { AdminUserRow } from "@/app/api/admin/users/route";
+import { SectionHeading } from "@/components/ui/Heading";
+import { Card } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
+import { Input, FORM_CONTROL_CLASS } from "@/components/ui/Input";
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
@@ -114,7 +118,9 @@ export default function WalletsPage() {
   return (
     <div className="flex flex-col gap-8">
       <div>
-        <h2 className="mb-2 text-sm font-semibold text-white">Кошельки</h2>
+        <SectionHeading dense className="mb-2">
+          Кошельки
+        </SectionHeading>
         <div className="overflow-x-auto rounded-xl border border-white/10">
           <table className="w-full text-left text-xs">
             <thead className="bg-white/[0.04] text-neutral-400">
@@ -174,14 +180,16 @@ export default function WalletsPage() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
-        <h2 className="mb-3 text-sm font-semibold text-white">Управление адресом</h2>
-        <input
+      <Card>
+        <SectionHeading dense className="mb-3">
+          Управление адресом
+        </SectionHeading>
+        <Input
           value={selectedAddress}
           onChange={(e) => setSelectedAddress(e.target.value)}
           placeholder="0x…"
           data-testid="admin-address-input"
-          className="mb-4 w-full rounded-lg border border-white/10 bg-black/20 px-3 py-2 font-mono text-xs text-white outline-none focus:border-fuchsia-400/50"
+          className="mb-4 w-full py-2 font-mono"
         />
         {selectedUser?.subscription && (
           <p className="mb-3 text-xs text-neutral-400">
@@ -218,30 +226,32 @@ export default function WalletsPage() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div className="flex flex-col gap-2">
             <label className="text-xs text-neutral-400">Монеты</label>
-            <input
+            <Input
               type="number"
               min={1}
               value={coinAmount}
               onChange={(e) => setCoinAmount(e.target.value)}
-              className="rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-xs text-white outline-none"
             />
             <div className="flex gap-2">
-              <button
+              <Button
                 onClick={() => runAction(() => grantCoins.mutate())}
                 disabled={grantCoins.isPending}
                 data-testid="admin-grant-coins"
-                className="flex-1 rounded-lg bg-gradient-to-r from-fuchsia-500 to-indigo-500 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                size="sm"
+                className="flex-1"
               >
                 {grantCoins.isPending ? "…" : "Начислить"}
-              </button>
-              <button
+              </Button>
+              <Button
                 onClick={() => runAction(() => deductCoins.mutate())}
                 disabled={deductCoins.isPending}
                 data-testid="admin-deduct-coins"
-                className="flex-1 rounded-lg border border-white/10 px-3 py-1.5 text-xs text-neutral-300 hover:border-white/30 disabled:opacity-50"
+                variant="secondary"
+                size="sm"
+                className="flex-1"
               >
                 {deductCoins.isPending ? "…" : "Списать"}
-              </button>
+              </Button>
             </div>
           </div>
 
@@ -250,7 +260,7 @@ export default function WalletsPage() {
             <select
               value={accessoryId}
               onChange={(e) => setAccessoryId(e.target.value)}
-              className="rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-xs text-white outline-none"
+              className={FORM_CONTROL_CLASS}
             >
               {ACCESSORIES.map((a) => (
                 <option key={a.id} value={a.id}>
@@ -258,14 +268,14 @@ export default function WalletsPage() {
                 </option>
               ))}
             </select>
-            <button
+            <Button
               onClick={() => runAction(() => grantAccessory.mutate())}
               disabled={grantAccessory.isPending}
               data-testid="admin-grant-accessory"
-              className="rounded-lg bg-gradient-to-r from-fuchsia-500 to-indigo-500 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+              size="sm"
             >
               {grantAccessory.isPending ? "…" : "Выдать аксессуар"}
-            </button>
+            </Button>
           </div>
 
           <div className="flex flex-col gap-2">
@@ -274,7 +284,7 @@ export default function WalletsPage() {
               <select
                 value={tierId}
                 onChange={(e) => setTierId(Number(e.target.value))}
-                className="flex-1 rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-xs text-white outline-none"
+                className={`flex-1 ${FORM_CONTROL_CLASS}`}
               >
                 {PAID_TIERS.map((t) => (
                   <option key={t.id} value={t.contractTierId}>
@@ -282,36 +292,38 @@ export default function WalletsPage() {
                   </option>
                 ))}
               </select>
-              <input
+              <Input
                 type="number"
                 min={1}
                 value={days}
                 onChange={(e) => setDays(e.target.value)}
                 title="дней"
-                className="w-16 rounded-lg border border-white/10 bg-black/20 px-2 py-1.5 text-xs text-white outline-none"
+                className="w-16"
               />
             </div>
             <div className="flex gap-2">
-              <button
+              <Button
                 onClick={() => runAction(() => grantSubscription.mutate())}
                 disabled={grantSubscription.isPending}
                 data-testid="admin-grant-subscription"
-                className="flex-1 rounded-lg bg-gradient-to-r from-fuchsia-500 to-indigo-500 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                size="sm"
+                className="flex-1"
               >
                 {grantSubscription.isPending ? "…" : "Выдать"}
-              </button>
-              <button
+              </Button>
+              <Button
                 onClick={() => runAction(() => clearSubscription.mutate())}
                 disabled={clearSubscription.isPending}
                 data-testid="admin-clear-subscription"
-                className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-neutral-300 hover:border-white/30"
+                variant="secondary"
+                size="sm"
               >
                 Снять
-              </button>
+              </Button>
             </div>
           </div>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }

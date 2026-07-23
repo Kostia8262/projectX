@@ -13,6 +13,9 @@ import { STORIES, resolveStoryVariant, type GameStory } from "@/lib/games/storie
 import { playTapSound, playReactionSound, playFinaleSound } from "@/lib/sound";
 import { CharacterStage } from "@/components/game/CharacterStage";
 import { OverrideControls } from "@/components/game/OverrideControls";
+import { PageTitle, SectionHeading, Eyebrow } from "@/components/ui/Heading";
+import { Card } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
 import { applyRoundToCharacter } from "@/lib/characters/roundHook";
 import { getCharacterForGame } from "@/lib/characters/registry";
 import { isOverrideActive, type OverrideState } from "@/lib/characters/override";
@@ -192,10 +195,10 @@ export function SpankGameRate({
     <div className="relative flex w-full min-h-0 flex-1 flex-col lg:flex-row">
       <div className="flex flex-1 flex-col gap-4 p-4 lg:p-8">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-fuchsia-300/80">
-            {game.tagline}
-          </p>
-          <h1 className="text-xl font-bold text-white lg:text-2xl">{titleOverride ?? game.title}</h1>
+          <Eyebrow>{game.tagline}</Eyebrow>
+          <PageTitle as="h2" plain>
+            {titleOverride ?? game.title}
+          </PageTitle>
         </div>
 
         <CharacterStage
@@ -205,7 +208,7 @@ export function SpankGameRate({
           pulseKey={pulseKey}
         />
 
-        <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-4 shadow-xl shadow-black/30 backdrop-blur-2xl">
+        <Card size="sm">
           <div className="h-3 w-full overflow-hidden rounded-full bg-white/10">
             <div
               className="h-full rounded-full transition-all duration-200"
@@ -228,7 +231,7 @@ export function SpankGameRate({
               />
             </div>
           </div>
-        </div>
+        </Card>
       </div>
 
       <div className="flex w-full flex-col gap-4 border-t border-white/10 bg-white/[0.03] p-4 lg:w-80 lg:border-t-0 lg:border-l lg:p-6">
@@ -258,7 +261,7 @@ export function SpankGameRate({
                 disabled={blocked}
                 data-testid={`implement-${impl.id}`}
                 title={reason ? IMPLEMENT_BLOCK_MESSAGES[reason] : undefined}
-                className={`flex h-16 w-20 flex-col items-center justify-center rounded-lg border text-[11px] font-medium transition ${
+                className={`flex h-16 w-20 flex-col items-center justify-center rounded-xl border text-[11px] font-medium transition ${
                   blocked
                     ? "cursor-not-allowed border-white/5 bg-white/[0.01] text-neutral-600 opacity-50"
                     : selectedId === impl.id
@@ -290,14 +293,14 @@ export function SpankGameRate({
             Энергия: {energy}/{max}
           </span>
           {outOfEnergy && (
-            <button
+            <Button
               onClick={energyRefill.buyRefill}
               disabled={energyRefill.pending}
               data-testid="refill-button"
-              className="rounded-lg bg-gradient-to-r from-fuchsia-500 to-indigo-500 px-3 py-1 text-xs font-semibold text-white disabled:opacity-50"
+              size="sm"
             >
               {energyRefill.pending ? "…" : `Пополнить (${energyRefill.cost} монет)`}
-            </button>
+            </Button>
           )}
         </div>
         {energyRefill.error && (
@@ -321,28 +324,22 @@ export function SpankGameRate({
 
       {phase === "intro" && story && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/70 p-6 backdrop-blur-sm">
-          <div className="max-w-md rounded-2xl border border-white/10 bg-white/[0.08] p-6 text-center shadow-2xl shadow-black/40 backdrop-blur-2xl">
-            <p className="text-xs font-semibold uppercase tracking-wide text-fuchsia-300/80">
-              {titleOverride ?? game.title}
-            </p>
+          <Card size="lg" className="max-w-md text-center">
+            <Eyebrow>{titleOverride ?? game.title}</Eyebrow>
             <p className="mt-3 text-sm leading-relaxed text-neutral-200" data-testid="story-intro">
               {story.intro}
             </p>
-            <button
-              onClick={() => setPhase("playing")}
-              data-testid="story-start-button"
-              className="mt-5 rounded-xl bg-gradient-to-r from-fuchsia-500 to-indigo-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-fuchsia-900/30 transition hover:brightness-110"
-            >
+            <Button onClick={() => setPhase("playing")} data-testid="story-start-button" size="lg" className="mt-5">
               Начать
-            </button>
-          </div>
+            </Button>
+          </Card>
         </div>
       )}
 
       {phase === "finale" && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/70 p-6 backdrop-blur-sm">
-          <div className="max-w-md rounded-2xl border border-white/10 bg-white/[0.08] p-6 text-center shadow-2xl shadow-black/40 backdrop-blur-2xl">
-            <p className="text-sm font-semibold text-white">Кульминация</p>
+          <Card size="lg" className="max-w-md text-center">
+            <SectionHeading dense>Кульминация</SectionHeading>
             <p className="mt-3 text-sm leading-relaxed text-neutral-200" data-testid="story-finale">
               {finaleText}
             </p>
@@ -357,14 +354,10 @@ export function SpankGameRate({
             <p className="mt-3 text-xs text-neutral-500">
               Прогресс в «Отклике» уже сохранён.
             </p>
-            <button
-              onClick={handleNewRound}
-              data-testid="new-round-button"
-              className="mt-5 rounded-xl bg-gradient-to-r from-fuchsia-500 to-indigo-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-fuchsia-900/30 transition hover:brightness-110"
-            >
+            <Button onClick={handleNewRound} data-testid="new-round-button" size="lg" className="mt-5">
               Новый раунд
-            </button>
-          </div>
+            </Button>
+          </Card>
         </div>
       )}
     </div>
