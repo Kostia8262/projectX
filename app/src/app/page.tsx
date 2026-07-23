@@ -1,23 +1,24 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { AgeGate } from "@/components/AgeGate";
 import { ConnectWallet } from "@/components/ConnectWallet";
 import { EnergyBadge } from "@/components/EnergyBadge";
 import { EnergyProvider } from "@/contexts/EnergyContext";
 import { Cabinet } from "@/components/Cabinet";
-import { Settings } from "@/components/Settings";
 import { SpankGame } from "@/components/game/SpankGame";
 import { SpankGameRate } from "@/components/game/SpankGameRate";
-import { RewardsPanel } from "@/components/game/RewardsPanel";
 import { CharacterSelect } from "@/components/character/CharacterSelect";
 import { CharacterPage } from "@/components/character/CharacterPage";
 import { AccessoryShop } from "@/components/shop/AccessoryShop";
 import { SubscriptionTiers } from "@/components/subscription/SubscriptionTiers";
+import { SubscriptionStatusBanner } from "@/components/SubscriptionStatusBanner";
 import { useSiweSession } from "@/hooks/useSiweSession";
 import { getGame } from "@/lib/games/registry";
 import { getChapter } from "@/lib/games/chapters";
 import { getCharacter } from "@/lib/characters/registry";
+import { isAdminAddress } from "@/lib/admin";
 
 type View =
   | { kind: "characters" }
@@ -28,8 +29,32 @@ type View =
   | { kind: "subscription" }
   | { kind: "game"; gameId: string; chapterId?: string; characterId?: string };
 
+// There's no per-view URL — everything lives under "/" — so without this,
+// a plain page refresh always dropped the player back to the character list
+// regardless of where they were. Persisted per-tab (not permanently) so a
+// refresh restores position but a fresh session still starts clean.
+const VIEW_STORAGE_KEY = "kink-current-view";
+
+function loadInitialView(): View {
+  if (typeof window === "undefined") return { kind: "characters" };
+  try {
+    const raw = window.sessionStorage.getItem(VIEW_STORAGE_KEY);
+    if (raw) return JSON.parse(raw) as View;
+  } catch {
+    // fall through to default
+  }
+  return { kind: "characters" };
+}
+
 function AuthenticatedApp({ address }: { address: string }) {
-  const [view, setView] = useState<View>({ kind: "characters" });
+  const [view, setViewState] = useState<View>(loadInitialView);
+
+  function setView(next: View) {
+    setViewState(next);
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem(VIEW_STORAGE_KEY, JSON.stringify(next));
+    }
+  }
 
   const activeGame = view.kind === "game" ? getGame(view.gameId) : undefined;
   const activeChapter =
@@ -50,6 +75,13 @@ function AuthenticatedApp({ address }: { address: string }) {
       ? `← ${getCharacter(view.characterId)?.name ?? "Назад"}`
       : "← Персонажи";
 
+  function playChapter(chapterId: string) {
+    const chapter = getChapter(chapterId);
+    if (chapter) {
+      setView({ kind: "game", gameId: chapter.gameId, chapterId, characterId: chapter.characterId });
+    }
+  }
+
   return (
     <div className="flex min-h-screen flex-col text-white">
       <header className="flex items-center justify-between border-b border-white/10 bg-white/[0.04] px-6 py-4 backdrop-blur-xl">
@@ -65,33 +97,34 @@ function AuthenticatedApp({ address }: { address: string }) {
         </div>
         <div className="flex items-center gap-3">
           <EnergyBadge />
-          {view.kind === "characters" && (
-            <>
-              <button
-                onClick={() => setView({ kind: "shop" })}
-                className="text-sm text-neutral-400 transition hover:text-white"
-              >
-                Магазин
-              </button>
-              <button
-                onClick={() => setView({ kind: "subscription" })}
-                className="text-sm text-neutral-400 transition hover:text-white"
-              >
-                Подписка
-              </button>
-              <button
-                onClick={() => setView({ kind: "cabinet" })}
-                className="text-sm text-neutral-400 transition hover:text-white"
-              >
-                Кабинет
-              </button>
-              <button
-                onClick={() => setView({ kind: "settings" })}
-                className="text-sm text-neutral-400 transition hover:text-white"
-              >
-                Настройки
-              </button>
-            </>
+          <button
+            onClick={() => setView({ kind: "shop" })}
+            className={`text-sm transition hover:text-white ${view.kind === "shop" ? "text-white" : "text-neutral-400"}`}
+          >
+            Магазин
+          </button>
+          <button
+            onClick={() => setView({ kind: "subscription" })}
+            className={`text-sm transition hover:text-white ${view.kind === "subscription" ? "text-white" : "text-neutral-400"}`}
+          >
+            Подписка
+          </button>
+          <button
+            onClick={() => setView({ kind: "cabinet" })}
+            className={`text-sm transition hover:text-white ${view.kind === "cabinet" ? "text-white" : "text-neutral-400"}`}
+          >
+            Кабинет
+          </button>
+          <button
+            onClick={() => setView({ kind: "settings" })}
+            className={`text-sm transition hover:text-white ${view.kind === "settings" ? "text-white" : "text-neutral-400"}`}
+          >
+            Настройки
+          </button>
+          {isAdminAddress(address) && (
+            <Link href="/admin" className="text-sm text-neutral-400 transition hover:text-white">
+              Админка
+            </Link>
           )}
           <ConnectWallet />
         </div>
@@ -103,10 +136,11 @@ function AuthenticatedApp({ address }: { address: string }) {
       >
         {view.kind === "characters" ? (
           <div className="flex w-full flex-col gap-8">
-            <RewardsPanel address={address} />
+            <SubscriptionStatusBanner onGoToSubscription={() => setView({ kind: "subscription" })} />
             <CharacterSelect
               address={address}
               onSelect={(characterId) => setView({ kind: "character", characterId })}
+              onPlayChapter={playChapter}
             />
           </div>
         ) : view.kind === "character" && activeCharacterPage ? (
@@ -114,17 +148,7 @@ function AuthenticatedApp({ address }: { address: string }) {
             address={address}
             character={activeCharacterPage}
             onBack={() => setView({ kind: "characters" })}
-            onPlayChapter={(chapterId) => {
-              const chapter = getChapter(chapterId);
-              if (chapter) {
-                setView({
-                  kind: "game",
-                  gameId: chapter.gameId,
-                  chapterId,
-                  characterId: activeCharacterPage.id,
-                });
-              }
-            }}
+            onPlayChapter={playChapter}
             onPlayGame={(gameId) =>
               setView({ kind: "game", gameId, characterId: activeCharacterPage.id })
             }
@@ -134,7 +158,7 @@ function AuthenticatedApp({ address }: { address: string }) {
         ) : view.kind === "settings" ? (
           <Settings address={address} />
         ) : view.kind === "shop" ? (
-          <AccessoryShop address={address} />
+          <AccessoryShop />
         ) : view.kind === "subscription" ? (
           <SubscriptionTiers />
         ) : view.kind === "game" && activeGame ? (
@@ -144,6 +168,7 @@ function AuthenticatedApp({ address }: { address: string }) {
               game={activeGame}
               titleOverride={activeChapter?.chapterTitle}
               storyOverride={activeChapter?.story}
+              nextTeaser={activeChapter?.nextTeaser}
             />
           ) : (
             <SpankGame
@@ -151,6 +176,7 @@ function AuthenticatedApp({ address }: { address: string }) {
               game={activeGame}
               titleOverride={activeChapter?.chapterTitle}
               storyOverride={activeChapter?.story}
+              nextTeaser={activeChapter?.nextTeaser}
             />
           )
         ) : null}

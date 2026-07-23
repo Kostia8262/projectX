@@ -40,7 +40,7 @@ export function RewardsPanel({ address }: { address: string }) {
   const nextReward = REWARDS.find((r) => affinity < r.threshold);
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-6">
+    <div className="w-full">
       <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-5 shadow-xl shadow-black/30 backdrop-blur-2xl">
         <div className="flex items-center justify-between">
           <p className="text-sm font-medium text-white">Прогресс отклика</p>

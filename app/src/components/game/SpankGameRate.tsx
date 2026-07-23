@@ -11,9 +11,11 @@ import {
 import { STORIES, resolveStoryVariant, type GameStory } from "@/lib/games/stories";
 import { playTapSound, playReactionSound, playFinaleSound } from "@/lib/sound";
 import { CharacterStage } from "@/components/game/CharacterStage";
+import { OverrideControls } from "@/components/game/OverrideControls";
 import { applyRoundToCharacter } from "@/lib/characters/roundHook";
 import { getCharacterForGame } from "@/lib/characters/registry";
-import { loadTraits } from "@/lib/characters/storage";
+import { isOverrideActive, type OverrideState } from "@/lib/characters/override";
+import { loadOverride, loadTraits } from "@/lib/characters/storage";
 import { isImplementBlocked, type TraitState } from "@/lib/characters/traits";
 
 function heatLifetimeKey(address: string, gameId: string) {
@@ -47,11 +49,13 @@ export function SpankGameRate({
   game,
   titleOverride,
   storyOverride,
+  nextTeaser,
 }: {
   address: string;
   game: GameDefinition;
   titleOverride?: string;
   storyOverride?: GameStory;
+  nextTeaser?: string;
 }) {
   const { energy, max, spend, refill } = useEnergyContext();
   const [heat, setHeat] = useState(0);
@@ -63,6 +67,10 @@ export function SpankGameRate({
   const [traits, setTraits] = useState<TraitState | null>(
     () => (character ? loadTraits(address, character) : null)
   );
+  const [overrideState, setOverrideState] = useState<OverrideState | null>(
+    () => (character ? loadOverride(address, character.id) : null)
+  );
+  const overriding = overrideState ? isOverrideActive(overrideState) : false;
   const [selectedId, setSelectedId] = useState(implements_[0]?.id);
   const selected = implements_.find((i) => i.id === selectedId) ?? implements_[0];
   const lifetimeRef = useRef(loadLifetimeHeat(address, game.id));
@@ -97,7 +105,7 @@ export function SpankGameRate({
 
   function handleTap() {
     if (!selected || outOfEnergy || phase !== "playing") return;
-    if (traits && isImplementBlocked(traits, selected.id)) return;
+    if (traits && character && isImplementBlocked(traits, character, selected, overriding)) return;
 
     const now = performance.now();
     if (lastTapRef.current !== null) {
@@ -144,7 +152,10 @@ export function SpankGameRate({
         })
       );
       applyRoundToCharacter(address, game.id, selected.id, averagePace);
-      if (character) setTraits(loadTraits(address, character));
+      if (character) {
+        setTraits(loadTraits(address, character));
+        setOverrideState(loadOverride(address, character.id));
+      }
       playFinaleSound();
       setPhase("finale");
     }
@@ -225,7 +236,7 @@ export function SpankGameRate({
 
         <div className="flex flex-wrap items-center justify-center gap-2">
           {implements_.map((impl) => {
-            const blocked = traits ? isImplementBlocked(traits, impl.id) : false;
+            const blocked = traits && character ? isImplementBlocked(traits, character, impl, overriding) : false;
             return (
               <button
                 key={impl.id}
@@ -265,6 +276,18 @@ export function SpankGameRate({
             </button>
           )}
         </div>
+
+        {character && overrideState && (
+          <OverrideControls
+            address={address}
+            character={character}
+            state={overrideState}
+            onChange={(next) => {
+              setOverrideState(next);
+              setTraits(loadTraits(address, character));
+            }}
+          />
+        )}
       </div>
 
       {phase === "intro" && story && (
@@ -294,6 +317,14 @@ export function SpankGameRate({
             <p className="mt-3 text-sm leading-relaxed text-neutral-200" data-testid="story-finale">
               {finaleText}
             </p>
+            {nextTeaser && (
+              <p
+                className="mt-4 border-t border-white/10 pt-4 text-sm italic leading-relaxed text-indigo-200"
+                data-testid="next-teaser"
+              >
+                {nextTeaser}
+              </p>
+            )}
             <p className="mt-3 text-xs text-neutral-500">
               Прогресс в «Отклике» уже сохранён.
             </p>

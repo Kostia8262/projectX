@@ -6,11 +6,18 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {Ownable2Step, Ownable} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-/// @notice Minimal subscription payment rail. Forwards a fixed price
-/// straight from the subscriber to the treasury (a Gnosis Safe multisig)
-/// on every call — the contract never holds a balance, so there is nothing
-/// for a bug or a compromised key to drain. Subscription status is not
-/// tracked here; it is derived off-chain from the `SubscriptionPaid` events.
+/// @notice Multi-tier subscription payment rail. Forwards a tier's fixed
+/// price straight from the subscriber to the treasury (a Gnosis Safe
+/// multisig) on every call — the contract never holds a balance, so there is
+/// nothing for a bug or a compromised key to drain. Subscription status
+/// (including which tier is active) is not tracked here; it is derived
+/// off-chain from `SubscriptionPaid` events, same as the single-price
+/// version this replaces.
+///
+/// Tier IDs are opaque uint8s the owner assigns prices to — the app's
+/// `lib/subscription/tiers.ts` is the source of truth for what each id
+/// means (name, benefits, off-chain display price). Tier id 0 is reserved
+/// for the free tier, which never touches this contract.
 contract SubscriptionPayments is Ownable2Step, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
@@ -21,36 +28,38 @@ contract SubscriptionPayments is Ownable2Step, ReentrancyGuard {
     /// Gnosis Safe multisig, not a single EOA.
     address public treasury;
 
-    /// @notice Price of one subscription period, in the payment token's
-    /// smallest unit.
-    uint256 public subscriptionPrice;
+    /// @notice Price of one subscription period for a given tier, in the
+    /// payment token's smallest unit. A price of 0 means the tier is not
+    /// configured (and `subscribe` rejects it).
+    mapping(uint8 => uint256) public tierPrices;
 
-    event SubscriptionPaid(address indexed subscriber, uint256 amount, uint256 timestamp);
+    event SubscriptionPaid(
+        address indexed subscriber,
+        uint8 indexed tierId,
+        uint256 amount,
+        uint256 timestamp
+    );
     event TreasuryUpdated(address indexed previousTreasury, address indexed newTreasury);
-    event PriceUpdated(uint256 previousPrice, uint256 newPrice);
+    event TierPriceUpdated(uint8 indexed tierId, uint256 previousPrice, uint256 newPrice);
 
     error ZeroAddress();
     error ZeroPrice();
+    error UnknownTier();
 
-    constructor(
-        address _paymentToken,
-        address _treasury,
-        uint256 _subscriptionPrice,
-        address initialOwner
-    ) Ownable(initialOwner) {
+    constructor(address _paymentToken, address _treasury, address initialOwner) Ownable(initialOwner) {
         if (_paymentToken == address(0) || _treasury == address(0)) revert ZeroAddress();
-        if (_subscriptionPrice == 0) revert ZeroPrice();
         paymentToken = IERC20(_paymentToken);
         treasury = _treasury;
-        subscriptionPrice = _subscriptionPrice;
     }
 
-    /// @notice Pay for one subscription period. Requires the caller to have
-    /// approved this contract for at least `subscriptionPrice` beforehand.
-    function subscribe() external nonReentrant {
-        uint256 price = subscriptionPrice;
+    /// @notice Pay for one subscription period of `tierId`. Requires the
+    /// caller to have approved this contract for at least that tier's price
+    /// beforehand. Reverts if the tier has no price configured.
+    function subscribe(uint8 tierId) external nonReentrant {
+        uint256 price = tierPrices[tierId];
+        if (price == 0) revert UnknownTier();
         paymentToken.safeTransferFrom(msg.sender, treasury, price);
-        emit SubscriptionPaid(msg.sender, price, block.timestamp);
+        emit SubscriptionPaid(msg.sender, tierId, price, block.timestamp);
     }
 
     /// @notice Update the treasury address. Owner-gated (owner should be the
@@ -61,10 +70,10 @@ contract SubscriptionPayments is Ownable2Step, ReentrancyGuard {
         treasury = newTreasury;
     }
 
-    /// @notice Update the subscription price. Owner-gated.
-    function setSubscriptionPrice(uint256 newPrice) external onlyOwner {
+    /// @notice Set (or update) the price of a tier. Owner-gated.
+    function setTierPrice(uint8 tierId, uint256 newPrice) external onlyOwner {
         if (newPrice == 0) revert ZeroPrice();
-        emit PriceUpdated(subscriptionPrice, newPrice);
-        subscriptionPrice = newPrice;
+        emit TierPriceUpdated(tierId, tierPrices[tierId], newPrice);
+        tierPrices[tierId] = newPrice;
     }
 }

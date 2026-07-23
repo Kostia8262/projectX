@@ -29,12 +29,13 @@ const subscription = await viem.getContractAt(
   "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512"
 );
 
-const price = await subscription.read.subscriptionPrice();
+const ADVANCED_TIER = 1;
+const price = await subscription.read.tierPrices([ADVANCED_TIER]);
 await token.write.mint([devAccount.address, price * 5n]);
 await token.write.approve([subscription.address, price * 5n], {
   account: devAccount,
 });
-const hash = await subscription.write.subscribe({ account: devAccount });
+const hash = await subscription.write.subscribe([ADVANCED_TIER], { account: devAccount });
 await publicClient.waitForTransactionReceipt({ hash });
 
 console.log("Subscribed as dev wallet:", devAccount.address);

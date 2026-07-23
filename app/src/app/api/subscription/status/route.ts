@@ -1,6 +1,6 @@
 import { isAddress } from "viem";
 import { cookies } from "next/headers";
-import { getSubscriptionStatus } from "@/lib/subscriptionIndexer";
+import { getEffectiveWalletSubscriptionStatus } from "@/lib/subscription/effectiveStatus";
 import { getPatreonSubscriptionStatus } from "@/lib/patreonSubscription";
 import { SESSION_COOKIE, verifySessionToken } from "@/lib/session";
 
@@ -24,6 +24,6 @@ export async function GET(request: Request) {
     return Response.json({ error: "Missing or invalid ?address=" }, { status: 400 });
   }
 
-  const status = await getSubscriptionStatus(address);
+  const status = await getEffectiveWalletSubscriptionStatus(address);
   return Response.json(status);
 }

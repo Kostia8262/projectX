@@ -13,12 +13,15 @@ const subscription = await viem.getContractAt(
   "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512"
 );
 
-const price = await subscription.read.subscriptionPrice();
+const ADVANCED_TIER = 1;
+const price = await subscription.read.tierPrices([ADVANCED_TIER]);
 await token.write.mint([subscriberClient.account.address, price * 5n]);
 await token.write.approve([subscription.address, price * 5n], {
   account: subscriberClient.account,
 });
-const hash = await subscription.write.subscribe({ account: subscriberClient.account });
+const hash = await subscription.write.subscribe([ADVANCED_TIER], {
+  account: subscriberClient.account,
+});
 
 const publicClient = await viem.getPublicClient();
 await publicClient.waitForTransactionReceipt({ hash });

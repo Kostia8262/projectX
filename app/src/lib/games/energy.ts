@@ -2,8 +2,13 @@
 // time, running out is the natural stopping point that a refill purchase
 // (placeholder for now) or a subscription-tier bonus (not wired yet — see
 // memory) can remove.
-export const ENERGY_MAX = 30;
-export const ENERGY_REGEN_MS = 2 * 60 * 1000; // +1 every 2 minutes
+//
+// Cap was 30 with +1/2min (60 min to fill from empty); bumped to 100 and
+// retuned to +1/min so a full refill takes ~100 min — longer sessions
+// before hitting the wall, without stretching the "come back later" loop
+// out to multiple hours the way holding the old per-point rate would have.
+export const ENERGY_MAX = 100;
+export const ENERGY_REGEN_MS = 60 * 1000; // +1 every minute
 
 export type EnergyState = {
   current: number;

@@ -16,7 +16,7 @@ export async function getPatreonSubscriptionStatus(
   session: SessionPayload
 ): Promise<SubscriptionStatus> {
   if (!session.patreonAccessToken) {
-    return { active: false, lastPaidAt: null, activeUntil: null };
+    return { active: false, lastPaidAt: null, activeUntil: null, tierId: null };
   }
 
   try {
@@ -25,6 +25,11 @@ export async function getPatreonSubscriptionStatus(
       active: identity.membershipActive,
       lastPaidAt: null,
       activeUntil: null,
+      // Patreon membership has no tier concept wired here yet — it's a
+      // single active/inactive flag, so it can never unlock tier-gated
+      // perks (shop discount, exclusive accessories). Those are wallet-only
+      // for now, same as the rest of the shop.
+      tierId: null,
     };
   } catch (err) {
     if (!(err instanceof Error) || err.message !== "PATREON_TOKEN_EXPIRED" || !session.patreonRefreshToken) {
@@ -44,6 +49,6 @@ export async function getPatreonSubscriptionStatus(
     const cookieStore = await cookies();
     cookieStore.set(SESSION_COOKIE, newToken, sessionCookieOptions);
 
-    return { active: identity.membershipActive, lastPaidAt: null, activeUntil: null };
+    return { active: identity.membershipActive, lastPaidAt: null, activeUntil: null, tierId: null };
   }
 }

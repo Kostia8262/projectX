@@ -7,12 +7,39 @@ export type GameStatus = "available" | "coming-soon";
 export type ImplementUnlock = "free" | "subscription" | "purchase";
 export type GameMechanic = "fixed" | "rate";
 
+// Lives here (not traits.ts) because it's fundamentally a property of the
+// implement/pace combo, not of the character reacting to it — see
+// classifyIntensity in traits.ts for how it's derived.
+export type RoundIntensity = "gentle" | "moderate" | "intense";
+
+// The economy: every implement pushes ALL FIVE character traits at once, in
+// different directions, instead of one implement = one stat. Nothing here is
+// a pure upside — each vector has a clear strength axis and a clear cost, so
+// switching implements is a real trade-off rather than a linear power scale.
+// See docs/Черты персонажей.md for the full design rationale.
+export type ImplementVector = {
+  pleasure: number;
+  submission: number;
+  boredomRelief: number; // how much this implement can cut into accumulated Boredom
+  defianceRisk: number; // baseline Defiance pressure this implement carries
+  affection: number;
+};
+
 export type Implement = {
   id: string;
   name: string;
   heatPerHit: number;
   unlock: ImplementUnlock;
   color: string;
+  intensityTier: RoundIntensity;
+  vector: ImplementVector;
+  // "Freshness" is a per-implement resource, same regenerate-on-read pattern
+  // as energy/boredom: using an implement spends charge, real elapsed hours
+  // regenerate it. Low charge discounts pleasure/boredomRelief (see
+  // freshnessMultiplier in traits.ts) — repetition dulls an implement even
+  // if it's otherwise a great fit for the character.
+  freshnessCost: number;
+  freshnessRegenPerHour: number;
 };
 
 export type HeatStage = {
@@ -47,9 +74,111 @@ export type GameDefinition = {
 // separate business decision from the subscription itself (per the user's
 // "actions can be paid for/intensified separately" direction).
 export const IMPLEMENTS: Implement[] = [
-  { id: "hand", name: "Рука", heatPerHit: 4, unlock: "free", color: "#f472b6" },
-  { id: "paddle", name: "Шлёпалка", heatPerHit: 7, unlock: "subscription", color: "#f97316" },
-  { id: "flogger", name: "Плётка", heatPerHit: 10, unlock: "purchase", color: "#a855f7" },
+  {
+    id: "hand",
+    name: "Рука",
+    heatPerHit: 4,
+    unlock: "free",
+    color: "#f472b6",
+    intensityTier: "gentle",
+    vector: { pleasure: 2, submission: 4, boredomRelief: 3, defianceRisk: 0, affection: 3 },
+    freshnessCost: 10,
+    freshnessRegenPerHour: 20,
+  },
+  {
+    id: "ruler",
+    name: "Линейка",
+    heatPerHit: 5,
+    unlock: "free",
+    color: "#facc15",
+    intensityTier: "gentle",
+    vector: { pleasure: 3, submission: 1, boredomRelief: 4, defianceRisk: 3, affection: 2 },
+    freshnessCost: 10,
+    freshnessRegenPerHour: 20,
+  },
+  {
+    id: "paddle",
+    name: "Шлёпалка",
+    heatPerHit: 7,
+    unlock: "subscription",
+    color: "#f97316",
+    intensityTier: "moderate",
+    vector: { pleasure: 5, submission: 3, boredomRelief: 5, defianceRisk: 2, affection: 1 },
+    freshnessCost: 15,
+    freshnessRegenPerHour: 12,
+  },
+  {
+    id: "brush",
+    name: "Щётка для волос",
+    heatPerHit: 6,
+    unlock: "subscription",
+    color: "#38bdf8",
+    intensityTier: "gentle",
+    vector: { pleasure: 3, submission: 2, boredomRelief: 2, defianceRisk: 0, affection: 6 },
+    freshnessCost: 15,
+    freshnessRegenPerHour: 12,
+  },
+  {
+    id: "belt",
+    name: "Ремень",
+    heatPerHit: 8,
+    unlock: "subscription",
+    color: "#78350f",
+    intensityTier: "moderate",
+    vector: { pleasure: 4, submission: 6, boredomRelief: 4, defianceRisk: 3, affection: -1 },
+    freshnessCost: 15,
+    freshnessRegenPerHour: 12,
+  },
+  {
+    id: "flogger",
+    name: "Плётка",
+    heatPerHit: 10,
+    unlock: "purchase",
+    color: "#a855f7",
+    intensityTier: "intense",
+    vector: { pleasure: 7, submission: 2, boredomRelief: 6, defianceRisk: 4, affection: -1 },
+    freshnessCost: 20,
+    freshnessRegenPerHour: 8,
+  },
+  {
+    id: "cane",
+    name: "Трость",
+    heatPerHit: 12,
+    unlock: "purchase",
+    color: "#65a30d",
+    intensityTier: "intense",
+    // Steepest cost/regen in the set on purpose — a "special occasion" item
+    // that punishes spamming hardest, see freshnessMultiplier.
+    vector: { pleasure: 8, submission: 1, boredomRelief: 8, defianceRisk: 5, affection: -2 },
+    freshnessCost: 35,
+    freshnessRegenPerHour: 4,
+  },
+  {
+    id: "riding-crop",
+    name: "Стек",
+    heatPerHit: 11,
+    unlock: "purchase",
+    color: "#1e293b",
+    intensityTier: "moderate",
+    // Only implement with a strong bonus on BOTH Pleasure and Submission —
+    // the signature "power item" for a control-reads-as-care character.
+    vector: { pleasure: 6, submission: 5, boredomRelief: 5, defianceRisk: 3, affection: 1 },
+    freshnessCost: 20,
+    freshnessRegenPerHour: 8,
+  },
+  {
+    id: "paddle-studded",
+    name: "Шипастая шлёпалка",
+    heatPerHit: 14,
+    unlock: "purchase",
+    color: "#dc2626",
+    // The real cost here — a negative Submission base, not just a risk —
+    // reflects that using it carelessly can actively undermine trust.
+    intensityTier: "intense",
+    vector: { pleasure: 9, submission: -1, boredomRelief: 7, defianceRisk: 6, affection: -3 },
+    freshnessCost: 35,
+    freshnessRegenPerHour: 4,
+  },
 ];
 
 export const HEAT_STAGES: HeatStage[] = [
@@ -84,6 +213,10 @@ export function implementsFor(game: GameDefinition): Implement[] {
   return IMPLEMENTS.filter((i) => game.implementIds.includes(i.id));
 }
 
+export function getImplement(implementId: string): Implement | undefined {
+  return IMPLEMENTS.find((i) => i.id === implementId);
+}
+
 export const GAMES: GameDefinition[] = [
   {
     id: "pilot-a",
@@ -92,7 +225,7 @@ export const GAMES: GameDefinition[] = [
     description: "Стандартный набор орудий, ровный набор нагрева — опорная версия для сравнения с остальными.",
     status: "available",
     characterLabel: "Персонаж A (заглушка)",
-    implementIds: ["hand", "paddle"],
+    implementIds: ["hand", "ruler", "paddle"],
     maxHeat: 100,
     mechanic: "fixed",
   },
@@ -103,7 +236,7 @@ export const GAMES: GameDefinition[] = [
     description: "Нагрев растёт медленнее, зато доступны все орудия — проверка на затяжной прогресс.",
     status: "available",
     characterLabel: "Персонаж B (заглушка)",
-    implementIds: ["hand", "paddle", "flogger"],
+    implementIds: ["hand", "ruler", "paddle", "brush", "belt", "flogger", "cane", "riding-crop", "paddle-studded"],
     maxHeat: 140,
     mechanic: "fixed",
   },
@@ -126,7 +259,7 @@ export const GAMES: GameDefinition[] = [
       "Энергия и нагрев зависят от темпа: чем чаще шлепаете, тем дороже каждое действие, но и эффект сильнее. Персонаж отдельно реагирует на скорость, а не только на счётчик.",
     status: "available",
     characterLabel: "Персонаж D (заглушка)",
-    implementIds: ["hand", "paddle", "flogger"],
+    implementIds: ["hand", "belt", "flogger", "cane", "riding-crop", "paddle-studded"],
     maxHeat: 100,
     mechanic: "rate",
   },

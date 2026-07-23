@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { SESSION_COOKIE, verifySessionToken } from "@/lib/session";
-import { getSubscriptionStatus } from "@/lib/subscriptionIndexer";
+import { getEffectiveWalletSubscriptionStatus } from "@/lib/subscription/effectiveStatus";
 import { getPatreonSubscriptionStatus } from "@/lib/patreonSubscription";
 import { getReward } from "@/lib/rewards/registry";
 import { createRewardAccessToken } from "@/lib/rewards/accessToken";
@@ -29,7 +29,7 @@ export async function GET(
   const subscription =
     session.kind === "patreon"
       ? await getPatreonSubscriptionStatus(session)
-      : await getSubscriptionStatus(session.address);
+      : await getEffectiveWalletSubscriptionStatus(session.address);
   if (!subscription.active) {
     return Response.json(
       { error: "No active subscription — this scene is subscriber-only" },

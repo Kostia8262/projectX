@@ -1,10 +1,15 @@
 import { getCharacterForGame } from "./registry";
-import { loadTraits, saveTraits } from "./storage";
+import { getImplement } from "../games/registry";
+import { isOverrideActive, isRecovering, recoveryHoursFor } from "./override";
+import { loadFreshness, loadOverride, loadTraits, saveFreshness, saveOverride, saveTraits } from "./storage";
 import {
+  applyAftercareDebuff,
   applyRoundOutcome,
   classifyIntensity,
+  freshnessCharge,
   matchesTolerance,
   meetsBoredomDemand,
+  spendFreshness,
 } from "./traits";
 
 // Single entry point both game engines call at round completion — keeps
@@ -17,15 +22,47 @@ export function applyRoundToCharacter(
   averagePace: number
 ): void {
   const character = getCharacterForGame(gameId);
-  if (!character) return;
+  const implement = getImplement(implementId);
+  if (!character || !implement) return;
 
   const traits = loadTraits(address, character);
-  const intensity = classifyIntensity(implementId, averagePace);
+  const freshness = loadFreshness(address, character);
+  const override = loadOverride(address, character.id);
+
+  const overriding = isOverrideActive(override);
+  // Recovery gains apply only once the pass itself has ended, never during
+  // the pass's own final round.
+  const recovering = !overriding && isRecovering(override);
+  const intensity = classifyIntensity(implement, averagePace);
+
   const outcome = {
+    implement,
     intensity,
-    matchesTolerance: matchesTolerance(character, intensity),
-    metBoredomDemand: meetsBoredomDemand(traits, intensity),
+    matchesTolerance: overriding ? true : matchesTolerance(character, intensity),
+    metBoredomDemand: overriding ? true : meetsBoredomDemand(traits, intensity),
+    resonant: character.preferredImplementIds.includes(implement.id),
+    // Карт-бланш ignores wear for the multiplier, but the implement still
+    // physically gets spent below — it'll show worn once the pass ends.
+    freshnessCharge: overriding ? 100 : freshnessCharge(freshness, implement.id),
+    overriding,
+    recovering,
   };
-  const next = applyRoundOutcome(traits, outcome);
+
+  let next = applyRoundOutcome(traits, outcome);
+  saveFreshness(address, character.id, spendFreshness(freshness, implement));
+
+  if (overriding) {
+    const roundsRemaining = override.roundsRemaining - 1;
+    if (roundsRemaining <= 0) {
+      next = applyAftercareDebuff(next);
+      saveOverride(address, character.id, {
+        roundsRemaining: 0,
+        recoveryUntil: Date.now() + recoveryHoursFor(character) * 60 * 60 * 1000,
+      });
+    } else {
+      saveOverride(address, character.id, { ...override, roundsRemaining });
+    }
+  }
+
   saveTraits(address, character.id, next);
 }

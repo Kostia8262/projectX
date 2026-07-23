@@ -14,6 +14,9 @@ export type CharacterDefinition = {
   preferredNote: string;
   dislikedNote: string;
   preferredImplementIds: string[];
+  // Signature color for menu/dashboard cards — distinct from HEAT_STAGES
+  // colors (which are shared, state-driven, and only apply in-game).
+  accentColor: string;
   // "low" = overwhelms easily, needs a gentle ramp (Рин); "high" = needs
   // real intensity to register Pleasure at all, gentle-only reads as boring
   // to her specifically (Ада).
@@ -32,6 +35,7 @@ export const CHARACTERS: CharacterDefinition[] = [
     preferredNote: "Ей важнее постепенность, чем сила — раскрывается медленно, но искренне.",
     dislikedNote: "Не любит, когда сразу переходят к жёсткому — ей нужно разогреться постепенно.",
     preferredImplementIds: ["hand"],
+    accentColor: "#f9a8d4",
     intensityTolerance: "low",
     boredomRate: "fast",
     gameIds: ["pilot-a", "pilot-c"],
@@ -45,6 +49,7 @@ export const CHARACTERS: CharacterDefinition[] = [
     preferredNote: "Ей нужна настоящая интенсивность, чтобы это вообще было интересно.",
     dislikedNote: "Скучает от слишком осторожной, робкой игры — вялость её не заводит, а раздражает.",
     preferredImplementIds: ["paddle", "flogger"],
+    accentColor: "#7c3aed",
     intensityTolerance: "high",
     boredomRate: "slow",
     gameIds: ["pilot-b", "pilot-d"],
