@@ -110,6 +110,7 @@ type FormState = {
   hints: ChapterHints;
   introDialogue: NodeForm[];
   outroDialogue: NodeForm[];
+  epilogueDialogue: NodeForm[];
 };
 
 function emptyBeat(): StoryBeat {
@@ -167,6 +168,7 @@ function formFor(chapter: ChapterRecord): FormState {
     },
     introDialogue: nodeFormsFor(chapter.introDialogue),
     outroDialogue: nodeFormsFor(chapter.outroDialogue),
+    epilogueDialogue: nodeFormsFor(chapter.epilogueDialogue),
   };
 }
 
@@ -192,6 +194,7 @@ function blankForm(): FormState {
     hints: emptyChapterHints(),
     introDialogue: [],
     outroDialogue: [],
+    epilogueDialogue: [],
   };
 }
 
@@ -525,6 +528,7 @@ export function ChapterForm({
         : undefined,
       introDialogue: buildDialogueTree(f.introDialogue),
       outroDialogue: buildDialogueTree(f.outroDialogue),
+      epilogueDialogue: buildDialogueTree(f.epilogueDialogue),
     };
   }
 
@@ -983,6 +987,23 @@ export function ChapterForm({
             ))}
           </div>
         )}
+      </div>
+
+      <div className="mt-4 border-t border-white/10 pt-4">
+        <SectionHeading dense className="mb-2">
+          Эпилог (послевкусие)
+        </SectionHeading>
+        <p className="mb-3 text-xs text-neutral-500">
+          Полноэкранная сцена ПОСЛЕ финальной модалки — открывается по кнопке «Продолжить», когда
+          развилка (если есть) уже отвечена. Место для того, чтобы она сама описала свои ощущения:
+          нежно, взволнованно, возбуждающе — не реакция на раунд, а его послевкусие. Тоже должна
+          сходиться к одному листовому узлу.
+        </p>
+        <DialogueTreeEditor
+          nodes={form.epilogueDialogue}
+          onChange={(epilogueDialogue) => setForm({ ...form, epilogueDialogue })}
+          addTestId="admin-chapter-add-epilogue-node"
+        />
       </div>
 
       <div className="mt-4 flex gap-2">

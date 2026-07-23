@@ -240,6 +240,8 @@ function parseChapterInput(body: unknown): ChapterInput | null {
   if (introDialogue === null) return null;
   const outroDialogue = parseDialogueTree(r.outroDialogue);
   if (outroDialogue === null) return null;
+  const epilogueDialogue = parseDialogueTree(r.epilogueDialogue);
+  if (epilogueDialogue === null) return null;
 
   return {
     characterId: r.characterId,
@@ -254,6 +256,7 @@ function parseChapterInput(body: unknown): ChapterInput | null {
     ...(decision !== undefined ? { decision } : {}),
     ...(introDialogue !== undefined ? { introDialogue } : {}),
     ...(outroDialogue !== undefined ? { outroDialogue } : {}),
+    ...(epilogueDialogue !== undefined ? { epilogueDialogue } : {}),
   };
 }
 

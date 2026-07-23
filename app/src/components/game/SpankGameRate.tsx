@@ -92,7 +92,7 @@ function randomPaceBand(previousCenter?: number): PaceBand {
   return { min: Math.max(0, center - half), max: Math.min(PACE_SCALE_MAX, center + half), center };
 }
 
-type Phase = "dialogue-intro" | "intro" | "playing" | "dialogue-outro" | "finale";
+type Phase = "dialogue-intro" | "intro" | "playing" | "dialogue-outro" | "finale" | "epilogue";
 
 export function SpankGameRate({
   address,
@@ -105,6 +105,7 @@ export function SpankGameRate({
   hints,
   introDialogue,
   outroDialogue,
+  epilogueDialogue,
   onFinishChapter,
 }: {
   address: string;
@@ -117,6 +118,7 @@ export function SpankGameRate({
   hints?: ChapterHints;
   introDialogue?: DialogueTree;
   outroDialogue?: DialogueTree;
+  epilogueDialogue?: DialogueTree;
   onFinishChapter?: () => void;
 }) {
   const { energy, max, spend } = useEnergyContext();
@@ -142,6 +144,8 @@ export function SpankGameRate({
   }, [introDialogue, phase]);
   const [finaleBeat, setFinaleBeat] = useState<StoryBeat | null>(null);
   const [pickedOptionId, setPickedOptionId] = useState<string | null>(null);
+  // See the matching comment in SpankGame.tsx.
+  const [epilogueDone, setEpilogueDone] = useState(false);
   const [rate, setRate] = useState(0);
   const implements_ = implementsFor(game);
   const character = getCharacterForGame(game.id);
@@ -314,6 +318,7 @@ export function SpankGameRate({
     setBand(randomPaceBand());
     setInBandFlash(false);
     setPickedOptionId(null);
+    setEpilogueDone(false);
     setPhase("playing");
   }
 
@@ -485,6 +490,17 @@ export function SpankGameRate({
         />
       )}
 
+      {phase === "epilogue" && epilogueDialogue && (
+        <DialogueScene
+          tree={epilogueDialogue}
+          accentColor={character?.accentColor}
+          onComplete={() => {
+            setEpilogueDone(true);
+            setPhase("finale");
+          }}
+        />
+      )}
+
       {phase === "intro" && story && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/70 p-6 backdrop-blur-sm">
           <Card size="lg" className="max-w-md text-center">
@@ -579,21 +595,32 @@ export function SpankGameRate({
             <p className="mt-3 text-xs text-neutral-500">
               Прогресс в «Отклике» уже сохранён.
             </p>
-            <div className="mt-5 flex flex-col gap-2">
-              {onFinishChapter && (
-                <Button onClick={onFinishChapter} data-testid="finish-chapter-button" size="lg">
-                  Дальше →
-                </Button>
-              )}
+            {epilogueDialogue && !epilogueDone && (!decision || pickedOptionId !== null) ? (
               <Button
-                onClick={handleNewRound}
-                data-testid="new-round-button"
+                onClick={() => setPhase("epilogue")}
+                data-testid="continue-to-epilogue-button"
                 size="lg"
-                variant={onFinishChapter ? "secondary" : "primary"}
+                className="mt-5"
               >
-                Новый раунд
+                Продолжить →
               </Button>
-            </div>
+            ) : (
+              <div className="mt-5 flex flex-col gap-2">
+                {onFinishChapter && (
+                  <Button onClick={onFinishChapter} data-testid="finish-chapter-button" size="lg">
+                    Дальше →
+                  </Button>
+                )}
+                <Button
+                  onClick={handleNewRound}
+                  data-testid="new-round-button"
+                  size="lg"
+                  variant={onFinishChapter ? "secondary" : "primary"}
+                >
+                  Новый раунд
+                </Button>
+              </div>
+            )}
           </Card>
         </div>
       )}

@@ -59,11 +59,15 @@ export type ChapterRecord = {
   // answering it appends one more character to the player's branch path.
   decision?: ChapterDecision;
   hints: ChapterHints;
-  // Both optional and independent — a chapter can have either, both, or
-  // neither. Absent means "skip the scene, keep today's behavior" (straight
-  // to the static story.intro screen / straight to the finale modal).
+  // All three optional and independent — a chapter can have any combination,
+  // or none. Absent means "skip the scene, keep today's behavior".
   introDialogue?: DialogueTree; // shown before the round starts
   outroDialogue?: DialogueTree; // shown after the round ends, before the finale modal
+  // Shown AFTER the finale modal (story text/nextTeaser/decision) has been
+  // read and, if present, its decision answered — an "afterglow" scene, not
+  // a reaction to the round itself. Absent skips straight from the finale
+  // modal's own buttons to the next chapter/replay, same as today.
+  epilogueDialogue?: DialogueTree;
 };
 
 // Short in-character reaction lines the girl can "say" mid-round, shown as a

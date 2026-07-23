@@ -226,6 +226,7 @@ function AuthenticatedApp({ address }: { address: string }) {
               hints: activeChapter?.hints,
               introDialogue: activeChapter?.introDialogue,
               outroDialogue: activeChapter?.outroDialogue,
+              epilogueDialogue: activeChapter?.epilogueDialogue,
               onFinishChapter: view.characterId
                 ? () => setView({ kind: "character", characterId: view.characterId! })
                 : undefined,

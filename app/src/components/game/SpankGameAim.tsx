@@ -25,6 +25,7 @@ import {
   freshnessCharge,
   implementBlockReason,
   IMPLEMENT_BLOCK_MESSAGES,
+  moodTag,
   type FreshnessState,
   type TraitState,
 } from "@/lib/characters/traits";
@@ -42,12 +43,48 @@ const ZONES: { id: ZoneId; label: string }[] = [
   { id: "right", label: "Правее" },
 ];
 
-const ZONE_SWITCH_MS = 1700;
+// Base cycle speed — scaled down (harder) by her CURRENT boredom at round
+// start (see zoneSwitchMs below): the more neglected she's been, the less
+// patient she is about being read correctly. Never scales below the floor —
+// a restless read is still meant to be beatable, not impossible.
+const ZONE_SWITCH_MS_BASE = 1700;
+const ZONE_SWITCH_MS_FLOOR = 900;
+const BOREDOM_SPEED_MS_PER_POINT = 8;
 const ZONE_HIT_MULTIPLIER = 1.15;
 const ZONE_MISS_MULTIPLIER = 0.45;
 
-function randomZone(exclude?: ZoneId): ZoneId {
-  const options = ZONES.map((z) => z.id).filter((id) => id !== exclude);
+// Consecutive correct reads build a small bonus, capped — rewards patient,
+// attentive play over rushing/guessing. Resets to zero on any miss.
+const STREAK_BONUS_PER_HIT = 0.05;
+const STREAK_CAP = 6;
+
+// Her own preferredImplementIds (characters/registry.ts) lands harder here
+// too, not just in the background trait economy — landing a hit with her
+// favourite implement gets its own distinct flash.
+const PREFERRED_HIT_BONUS = 1.15;
+
+// Repeating the same implement tap after tap dulls the scene (her own
+// traitNotes say as much: "повторение одного приёма подряд быстро
+// остужает") — a decaying novelty multiplier that only recovers when the
+// player actually switches implements.
+const NOVELTY_FLOOR = 0.7;
+const NOVELTY_DECAY_PER_TAP = 0.03;
+
+// A "flinch" meter, seeded from her real persisted Defiance and rising
+// with every miss (falling fast on a hit — same fast-flares/fast-cools
+// pattern Defiance already has, see traits.ts's DEFIANCE_COOLDOWN_PER_HOUR).
+// Crossing the threshold has her pull back from one zone entirely for a
+// few seconds — a rushed guess reads as rushing HER, not just missing.
+const MISS_FLINCH_GAIN = 15;
+const HIT_FLINCH_RELIEF = 8;
+const FLINCH_LOCKOUT_THRESHOLD = 60;
+const FLINCH_RELIEF_ON_TRIGGER = 30;
+const LOCKOUT_DURATION_MS = 2500;
+
+const MOOD_LABEL: Record<"warm" | "cold", string> = { warm: "Тепло", cold: "Настороже" };
+
+function randomZone(exclude?: ZoneId, alsoExclude?: ZoneId | null): ZoneId {
+  const options = ZONES.map((z) => z.id).filter((id) => id !== exclude && id !== alsoExclude);
   return options[Math.floor(Math.random() * options.length)] ?? ZONES[0].id;
 }
 
@@ -130,21 +167,45 @@ export function SpankGameAim({
   const { text: hintText, visible: hintVisible, triggerStage, triggerBlocked } = useCharacterHint(hints);
 
   const [activeZone, setActiveZone] = useState<ZoneId>(() => randomZone());
-  const [lastZoneResult, setLastZoneResult] = useState<"hit" | "miss" | null>(null);
+  const [lastZoneResult, setLastZoneResult] = useState<"hit" | "preferred" | "miss" | null>(null);
   const zoneHitsRef = useRef(0);
   const zoneTapsRef = useRef(0);
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [timeLeftMs, setTimeLeftMs] = useState(ROUND_DURATION_MS);
   const finishedRef = useRef(false);
 
-  // Zone cycling — only while the round is actually running.
+  const hitStreakRef = useRef(0);
+  const lastImplementRef = useRef<string | null>(null);
+  const sameImplementStreakRef = useRef(0);
+  const [streak, setStreak] = useState(0);
+  const flinchRef = useRef(traits?.defiance ?? 0);
+  const [closedZone, setClosedZone] = useState<ZoneId | null>(null);
+  const closedZoneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Faster the more bored she already is going into this round — read from
+  // whatever traits were loaded at mount/last finale, not live (traits only
+  // change between rounds, not mid-round).
+  const zoneSwitchMs = Math.max(
+    ZONE_SWITCH_MS_FLOOR,
+    ZONE_SWITCH_MS_BASE - (traits?.boredom ?? 0) * BOREDOM_SPEED_MS_PER_POINT
+  );
+
+  // Zone cycling — only while the round is actually running. Restarts (and
+  // re-picks) whenever the lockout toggles so a newly-closed zone can never
+  // linger as the "active" one, and vice versa.
   useEffect(() => {
     if (phase !== "playing") return;
     const id = setInterval(() => {
-      setActiveZone((current) => randomZone(current));
-    }, ZONE_SWITCH_MS);
+      setActiveZone((current) => randomZone(current, closedZone));
+    }, zoneSwitchMs);
     return () => clearInterval(id);
-  }, [phase]);
+  }, [phase, zoneSwitchMs, closedZone]);
+
+  useEffect(() => {
+    return () => {
+      if (closedZoneTimerRef.current) clearTimeout(closedZoneTimerRef.current);
+    };
+  }, []);
 
   // The 60-second countdown itself — ticks off elapsed real time rather
   // than a fixed decrement, so background-tab throttling can't stretch the
@@ -174,6 +235,7 @@ export function SpankGameAim({
   // a heat total — same 5-tier palette as every other pilot, just fed by
   // live precision instead of accumulated hits.
   const stage = stageForHeat(precision * 100);
+  const mood = traits ? moodTag(traits) : "warm";
 
   function finishRound() {
     if (finishedRef.current) return;
@@ -196,8 +258,19 @@ export function SpankGameAim({
     setPhase(outroDialogue ? "dialogue-outro" : "finale");
   }
 
+  function triggerFlinchLockout() {
+    if (closedZone) return; // don't stack a second lockout while one's active
+    const candidates = ZONES.map((z) => z.id).filter((id) => id !== activeZone);
+    const lockZone = candidates[Math.floor(Math.random() * candidates.length)] ?? null;
+    if (!lockZone) return;
+    setClosedZone(lockZone);
+    flinchRef.current = Math.max(0, flinchRef.current - FLINCH_RELIEF_ON_TRIGGER);
+    if (closedZoneTimerRef.current) clearTimeout(closedZoneTimerRef.current);
+    closedZoneTimerRef.current = setTimeout(() => setClosedZone(null), LOCKOUT_DURATION_MS);
+  }
+
   function handleZoneTap(zoneId: ZoneId) {
-    if (!selected || outOfEnergy || phase !== "playing") return;
+    if (!selected || outOfEnergy || phase !== "playing" || zoneId === closedZone) return;
     if (traits && character && implementBlockReason(traits, character, selected, overriding)) {
       triggerBlocked();
       return;
@@ -209,11 +282,37 @@ export function SpankGameAim({
     const isHit = zoneId === activeZone;
     zoneTapsRef.current += 1;
     if (isHit) zoneHitsRef.current += 1;
-    setLastZoneResult(isHit ? "hit" : "miss");
+
+    // Same-implement repetition dulls the multiplier regardless of hit/miss
+    // — matches her own traitNotes on repetition ("быстро остужает").
+    const isSameImplement = selected.id === lastImplementRef.current;
+    sameImplementStreakRef.current = isSameImplement ? sameImplementStreakRef.current + 1 : 0;
+    lastImplementRef.current = selected.id;
+    const noveltyMultiplier = Math.max(
+      NOVELTY_FLOOR,
+      1 - sameImplementStreakRef.current * NOVELTY_DECAY_PER_TAP
+    );
+
+    let multiplier = ZONE_MISS_MULTIPLIER;
+    let result: "hit" | "preferred" | "miss" = "miss";
+    if (isHit) {
+      hitStreakRef.current += 1;
+      flinchRef.current = Math.max(0, flinchRef.current - HIT_FLINCH_RELIEF);
+      const preferred = Boolean(character?.preferredImplementIds.includes(selected.id));
+      multiplier = ZONE_HIT_MULTIPLIER * (1 + Math.min(hitStreakRef.current, STREAK_CAP) * STREAK_BONUS_PER_HIT);
+      if (preferred) multiplier *= PREFERRED_HIT_BONUS;
+      result = preferred ? "preferred" : "hit";
+    } else {
+      hitStreakRef.current = 0;
+      flinchRef.current = Math.min(100, flinchRef.current + MISS_FLINCH_GAIN);
+      if (flinchRef.current >= FLINCH_LOCKOUT_THRESHOLD) triggerFlinchLockout();
+    }
+    setStreak(hitStreakRef.current);
+    setLastZoneResult(result);
     if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
     flashTimerRef.current = setTimeout(() => setLastZoneResult(null), 700);
 
-    const gained = selected.heatPerHit * (isHit ? ZONE_HIT_MULTIPLIER : ZONE_MISS_MULTIPLIER);
+    const gained = selected.heatPerHit * multiplier * noveltyMultiplier;
     lifetimeRef.current += gained;
     window.localStorage.setItem(heatLifetimeKey(address, game.id), String(lifetimeRef.current));
 
@@ -231,6 +330,13 @@ export function SpankGameAim({
     roundStartRef.current = performance.now();
     zoneHitsRef.current = 0;
     zoneTapsRef.current = 0;
+    hitStreakRef.current = 0;
+    sameImplementStreakRef.current = 0;
+    lastImplementRef.current = selected?.id ?? null;
+    flinchRef.current = traits?.defiance ?? 0;
+    if (closedZoneTimerRef.current) clearTimeout(closedZoneTimerRef.current);
+    setClosedZone(null);
+    setStreak(0);
     finishedRef.current = false;
     setTimeLeftMs(ROUND_DURATION_MS);
     setLastZoneResult(null);
@@ -265,34 +371,66 @@ export function SpankGameAim({
           {phase === "playing" && (
             <>
               <div className="pointer-events-none absolute inset-0 flex">
-                {ZONES.map((zone) => (
-                  <button
-                    key={zone.id}
-                    onClick={() => handleZoneTap(zone.id)}
-                    disabled={outOfEnergy}
-                    data-testid={`aim-zone-${zone.id}`}
-                    aria-label={zone.label}
-                    className={`pointer-events-auto flex-1 border-white/5 transition first:border-r last:border-l disabled:cursor-not-allowed ${
-                      zone.id === activeZone
-                        ? "bg-fuchsia-500/10 ring-2 ring-inset ring-fuchsia-400/50"
-                        : "hover:bg-white/5"
-                    }`}
-                  />
-                ))}
+                {ZONES.map((zone) => {
+                  const isClosed = zone.id === closedZone;
+                  return (
+                    <button
+                      key={zone.id}
+                      onClick={() => handleZoneTap(zone.id)}
+                      disabled={outOfEnergy || isClosed}
+                      data-testid={`aim-zone-${zone.id}`}
+                      aria-label={zone.label}
+                      className={`pointer-events-auto flex-1 border-white/5 transition first:border-r last:border-l disabled:cursor-not-allowed ${
+                        isClosed
+                          ? "bg-black/40"
+                          : zone.id === activeZone
+                            ? "bg-fuchsia-500/10 ring-2 ring-inset ring-fuchsia-400/50"
+                            : "hover:bg-white/5"
+                      }`}
+                    />
+                  );
+                })}
               </div>
-              <span className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-full border border-white/20 bg-black/60 px-3 py-1 text-xs font-medium text-white backdrop-blur">
-                Она здесь: {ZONES.find((z) => z.id === activeZone)?.label}
-              </span>
+              <div className="pointer-events-none absolute left-1/2 top-3 flex -translate-x-1/2 items-center gap-1.5">
+                <span className="rounded-full border border-white/20 bg-black/60 px-3 py-1 text-xs font-medium text-white backdrop-blur">
+                  Она здесь: {ZONES.find((z) => z.id === activeZone)?.label}
+                </span>
+                <span
+                  className={`rounded-full border px-2.5 py-1 text-xs font-medium backdrop-blur ${
+                    mood === "warm"
+                      ? "border-fuchsia-400/30 bg-fuchsia-500/10 text-fuchsia-200"
+                      : "border-indigo-400/30 bg-indigo-500/10 text-indigo-200"
+                  }`}
+                  data-testid="aim-mood"
+                >
+                  {MOOD_LABEL[mood]}
+                </span>
+              </div>
+              {closedZone && (
+                <span
+                  className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full border border-rose-400/30 bg-rose-500/15 px-3 py-1 text-xs font-medium text-rose-200 backdrop-blur"
+                  data-testid="aim-flinch"
+                >
+                  Она отстранилась — не спешите
+                </span>
+              )}
+              {streak >= 2 && (
+                <span className="pointer-events-none absolute left-3 top-3 rounded-full border border-white/20 bg-black/60 px-3 py-1 text-xs font-medium text-white backdrop-blur">
+                  Серия: {streak}
+                </span>
+              )}
               {lastZoneResult && (
                 <span
                   className={`pointer-events-none absolute right-3 top-3 rounded-full border px-3 py-1 text-xs font-semibold backdrop-blur ${
-                    lastZoneResult === "hit"
-                      ? "border-emerald-400/40 bg-emerald-500/20 text-emerald-200"
-                      : "border-white/10 bg-black/50 text-neutral-400"
+                    lastZoneResult === "preferred"
+                      ? "border-pink-400/40 bg-pink-500/20 text-pink-200"
+                      : lastZoneResult === "hit"
+                        ? "border-emerald-400/40 bg-emerald-500/20 text-emerald-200"
+                        : "border-white/10 bg-black/50 text-neutral-400"
                   }`}
                   data-testid="aim-feedback"
                 >
-                  {lastZoneResult === "hit" ? "Точно!" : "Мимо…"}
+                  {lastZoneResult === "preferred" ? "Ей особенно нравится!" : lastZoneResult === "hit" ? "Точно!" : "Мимо…"}
                 </span>
               )}
             </>
