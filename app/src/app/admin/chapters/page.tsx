@@ -7,7 +7,7 @@ import { CHARACTERS } from "@/lib/characters/registry";
 import type { ChapterRecord } from "@/lib/content/types";
 import { SectionHeading } from "@/components/ui/Heading";
 import { Button } from "@/components/ui/Button";
-import { FORM_CONTROL_CLASS } from "@/components/ui/Input";
+import { SELECT_CLASS } from "@/components/ui/Input";
 import { Table } from "@/components/ui/Table";
 import { useAdminWhoAmI } from "@/hooks/useAdminWhoAmI";
 import { canEditGames, ROLE_LABELS } from "@/lib/admin/roles";
@@ -59,7 +59,7 @@ export default function ChaptersPage() {
               value={characterFilter}
               onChange={(e) => setCharacterFilter(e.target.value)}
               data-testid="admin-chapter-character-filter"
-              className={FORM_CONTROL_CLASS}
+              className={SELECT_CLASS}
             >
               <option value={ALL_CHARACTERS}>Все персонажи</option>
               {CHARACTERS.map((c) => (
@@ -77,7 +77,10 @@ export default function ChaptersPage() {
           Текст и изображения главы независимы от текста той же pilot-игры в свободной игре — правки
           здесь её не затрагивают.
         </p>
-        <Table columns={["Персонаж", "Глава", "Название", "Игра", "Порог", ""]}>
+        <Table
+          columns={["Персонаж", "Глава", "Название", "Игра", "Порог", ""]}
+          columnWidths={["w-32", "w-24", "w-56", "w-32", "w-20", "w-10"]}
+        >
           {chaptersQuery.isLoading && (
             <tr>
               <td className="px-3 py-3 text-neutral-500" colSpan={6}>
@@ -99,12 +102,12 @@ export default function ChaptersPage() {
               data-testid={`admin-chapter-${c.id}`}
               className="cursor-pointer border-t border-white/5 hover:bg-white/[0.04]"
             >
-              <td className="px-3 py-2">
+              <td className="truncate px-3 py-2">
                 {CHARACTERS.find((ch) => ch.id === c.characterId)?.name ?? c.characterId}
               </td>
-              <td className="px-3 py-2">{chapterLabel(c.order, c.branchPath)}</td>
-              <td className="px-3 py-2 text-neutral-400">{c.chapterTitle}</td>
-              <td className="px-3 py-2 font-mono text-neutral-400">{c.gameId}</td>
+              <td className="truncate px-3 py-2">{chapterLabel(c.order, c.branchPath)}</td>
+              <td className="truncate px-3 py-2 text-neutral-400">{c.chapterTitle}</td>
+              <td className="truncate px-3 py-2 font-mono text-neutral-400">{c.gameId}</td>
               <td className="px-3 py-2">{c.unlockThreshold}</td>
               <td className="px-3 py-2 text-neutral-500">→</td>
             </tr>

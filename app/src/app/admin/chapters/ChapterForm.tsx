@@ -5,7 +5,12 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CHARACTERS } from "@/lib/characters/registry";
 import { GAMES, HEAT_STAGES, IMPLEMENTS } from "@/lib/games/registry";
 import type { GameStory, StoryBeat, StoryTag } from "@/lib/games/stories";
-import { emptyChapterHints, type ChapterHints, type ChapterRecord } from "@/lib/content/types";
+import {
+  emptyChapterHints,
+  type ChapterHints,
+  type ChapterRecord,
+  type DialogueTree,
+} from "@/lib/content/types";
 import { SectionHeading } from "@/components/ui/Heading";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -20,10 +25,70 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 
 type VariantRow = { tag: StoryTag; beat: StoryBeat };
 
+// The 4 "mood + session quality" combo tags (see games/stories.ts's
+// resolveStoryVariant) — flat values in the select, same as fast/slow,
+// not nested behind a second picker like implement-*.
+const COMBO_TAG_OPTIONS: { value: StoryTag; label: string }[] = [
+  { value: "masterful-warm", label: "Мастерство · тепло" },
+  { value: "masterful-cold", label: "Мастерство · холодно" },
+  { value: "clumsy-warm", label: "Неаккуратно · тепло" },
+  { value: "clumsy-cold", label: "Неаккуратно · холодно" },
+];
+const COMBO_TAG_SET = new Set(COMBO_TAG_OPTIONS.map((o) => o.value));
+
 // Always exactly 2 — a decision is always a binary fork (see the
 // ChapterDecision comment in lib/content/types.ts on why explicit-choice
 // forks stay binary rather than open-ended).
 type DecisionOptionForm = { label: string; result: StoryBeat };
+
+// Editor-only shape for one DialogueTree node (lib/content/types.ts) — `mode`
+// decides which of `next`/`choices` actually gets sent (see buildDialogueTree
+// below), same "one field picks which other fields are live" pattern as the
+// decision/variant forms elsewhere in this file.
+type NodeForm = {
+  id: string;
+  speaker: string;
+  text: string;
+  image?: string;
+  mode: "end" | "linear" | "branch";
+  next: string; // used when mode === "linear"
+  choices: { label: string; next: string }[]; // used when mode === "branch"
+};
+
+function nodeFormsFor(tree?: DialogueTree): NodeForm[] {
+  if (!tree) return [];
+  return tree.nodes.map((n) => ({
+    id: n.id,
+    speaker: n.speaker ?? "",
+    text: n.text,
+    image: n.image,
+    mode: n.choices ? "branch" : n.next ? "linear" : "end",
+    next: n.next ?? "",
+    choices: n.choices ? n.choices.map((c) => ({ label: c.label, next: c.next })) : [],
+  }));
+}
+
+// Empty array => "no scene" (field omitted from the payload) — same
+// undefined-means-absent convention as `decision` below.
+function buildDialogueTree(forms: NodeForm[]): DialogueTree | undefined {
+  if (forms.length === 0) return undefined;
+  return {
+    nodes: forms.map((f) => ({
+      id: f.id,
+      text: f.text,
+      ...(f.speaker.trim() ? { speaker: f.speaker } : {}),
+      ...(f.image ? { image: f.image } : {}),
+      ...(f.mode === "linear" && f.next ? { next: f.next } : {}),
+      ...(f.mode === "branch" ? { choices: f.choices } : {}),
+    })),
+  };
+}
+
+function dialogueNodeLabel(node: NodeForm, index: number): string {
+  const snippet = node.text.trim();
+  if (!snippet) return `Узел ${index + 1}`;
+  return snippet.length > 40 ? `${snippet.slice(0, 40)}…` : snippet;
+}
 
 type FormState = {
   characterId: string;
@@ -43,6 +108,8 @@ type FormState = {
   decisionPrompt: StoryBeat;
   decisionOptions: [DecisionOptionForm, DecisionOptionForm];
   hints: ChapterHints;
+  introDialogue: NodeForm[];
+  outroDialogue: NodeForm[];
 };
 
 function emptyBeat(): StoryBeat {
@@ -98,6 +165,8 @@ function formFor(chapter: ChapterRecord): FormState {
       stage: chapter.hints.stage.map((bucket) => [...bucket]) as ChapterHints["stage"],
       blocked: [...chapter.hints.blocked],
     },
+    introDialogue: nodeFormsFor(chapter.introDialogue),
+    outroDialogue: nodeFormsFor(chapter.outroDialogue),
   };
 }
 
@@ -121,6 +190,8 @@ function blankForm(): FormState {
     decisionPrompt: emptyBeat(),
     decisionOptions: emptyDecisionOptions(),
     hints: emptyChapterHints(),
+    introDialogue: [],
+    outroDialogue: [],
   };
 }
 
@@ -240,6 +311,168 @@ function HintBucketEditor({
   );
 }
 
+// Editor for one DialogueTree (lib/content/types.ts) — a flat list of nodes
+// rather than a visual graph, same DIY level as the rest of this page.
+// nodes[0] is the entry point (no separate "entry" field to manage). Each
+// node picks one of three modes: "end" (leaf — the scene finishes here),
+// "linear" (one target node) or "branch" (2+ labeled choices, each with its
+// own target) — target pickers list every OTHER node by a text snippet, not
+// a raw id, so authoring doesn't require memorizing generated ids.
+function DialogueTreeEditor({
+  nodes,
+  onChange,
+  addTestId,
+}: {
+  nodes: NodeForm[];
+  onChange: (next: NodeForm[]) => void;
+  addTestId: string;
+}) {
+  function addNode() {
+    onChange([
+      ...nodes,
+      { id: crypto.randomUUID(), speaker: "", text: "", mode: "end", next: "", choices: [] },
+    ]);
+  }
+  function updateNode(i: number, patch: Partial<NodeForm>) {
+    const next = [...nodes];
+    next[i] = { ...next[i], ...patch };
+    onChange(next);
+  }
+  function removeNode(i: number) {
+    onChange(nodes.filter((_, idx) => idx !== i));
+  }
+  function targetOptions(excludeId: string) {
+    return nodes.filter((n) => n.id !== excludeId);
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      {nodes.map((node, i) => (
+        <div key={node.id} className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-medium text-neutral-400">
+              {i === 0 ? "Узел 1 (начало сцены)" : `Узел ${i + 1}`}
+            </span>
+            <button
+              type="button"
+              onClick={() => removeNode(i)}
+              data-testid={`dialogue-remove-node-${i}`}
+              className="text-xs text-rose-400 hover:text-rose-300"
+            >
+              Убрать
+            </button>
+          </div>
+
+          <div className="mt-2 flex flex-col gap-2">
+            <Input
+              value={node.speaker}
+              onChange={(e) => updateNode(i, { speaker: e.target.value })}
+              placeholder="Говорящий (необязательно)"
+              data-testid={`dialogue-speaker-${i}`}
+            />
+            <textarea
+              value={node.text}
+              onChange={(e) => updateNode(i, { text: e.target.value })}
+              rows={2}
+              placeholder="Реплика"
+              data-testid={`dialogue-text-${i}`}
+              className={FORM_CONTROL_CLASS}
+            />
+          </div>
+          <div className="mt-2">
+            <ImageUploadField image={node.image} onChange={(image) => updateNode(i, { image })} />
+          </div>
+
+          <div className="mt-3 border-t border-white/10 pt-3">
+            <select
+              value={node.mode}
+              onChange={(e) => updateNode(i, { mode: e.target.value as NodeForm["mode"] })}
+              data-testid={`dialogue-mode-${i}`}
+              className={SELECT_CLASS}
+            >
+              <option value="end">Конец сцены (переход дальше)</option>
+              <option value="linear">Дальше → один узел</option>
+              <option value="branch">Развилка (варианты ответа)</option>
+            </select>
+
+            {node.mode === "linear" && (
+              <select
+                value={node.next}
+                onChange={(e) => updateNode(i, { next: e.target.value })}
+                data-testid={`dialogue-next-${i}`}
+                className={`${SELECT_CLASS} mt-2`}
+              >
+                <option value="">— выбрать узел —</option>
+                {targetOptions(node.id).map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {dialogueNodeLabel(n, nodes.indexOf(n))}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {node.mode === "branch" && (
+              <div className="mt-2 flex flex-col gap-2">
+                {node.choices.map((choice, ci) => (
+                  <div key={ci} className="flex flex-wrap items-center gap-2 rounded-lg border border-white/10 p-2">
+                    <Input
+                      value={choice.label}
+                      onChange={(e) => {
+                        const choices = [...node.choices];
+                        choices[ci] = { ...choice, label: e.target.value };
+                        updateNode(i, { choices });
+                      }}
+                      placeholder="Текст кнопки"
+                      data-testid={`dialogue-choice-label-${i}-${ci}`}
+                      className="flex-1"
+                    />
+                    <select
+                      value={choice.next}
+                      onChange={(e) => {
+                        const choices = [...node.choices];
+                        choices[ci] = { ...choice, next: e.target.value };
+                        updateNode(i, { choices });
+                      }}
+                      data-testid={`dialogue-choice-next-${i}-${ci}`}
+                      className={SELECT_CLASS}
+                    >
+                      <option value="">— выбрать узел —</option>
+                      {targetOptions(node.id).map((n) => (
+                        <option key={n.id} value={n.id}>
+                          {dialogueNodeLabel(n, nodes.indexOf(n))}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => updateNode(i, { choices: node.choices.filter((_, idx) => idx !== ci) })}
+                      data-testid={`dialogue-choice-remove-${i}-${ci}`}
+                      className="text-xs text-rose-400 hover:text-rose-300"
+                    >
+                      Убрать
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => updateNode(i, { choices: [...node.choices, { label: "", next: "" }] })}
+                  data-testid={`dialogue-choice-add-${i}`}
+                  className="self-start text-xs text-neutral-500 transition hover:text-white"
+                >
+                  + добавить вариант ответа
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      ))}
+      <Button onClick={addNode} variant="secondary" size="sm" data-testid={addTestId}>
+        Добавить узел
+      </Button>
+    </div>
+  );
+}
+
 // Full editor for one chapter variant — used by both /admin/chapters/new
 // (no `chapter` prop, starts blank) and /admin/chapters/[id] (existing
 // chapter, pre-filled). `onDone` fires after a successful save or delete so
@@ -290,6 +523,8 @@ export function ChapterForm({
             ],
           }
         : undefined,
+      introDialogue: buildDialogueTree(f.introDialogue),
+      outroDialogue: buildDialogueTree(f.outroDialogue),
     };
   }
 
@@ -471,6 +706,22 @@ export function ChapterForm({
       </div>
 
       <div className="mt-4 border-t border-white/10 pt-4">
+        <div className="mb-2 flex items-center justify-between">
+          <SectionHeading dense>Диалог перед игрой</SectionHeading>
+        </div>
+        <p className="mb-3 text-xs text-neutral-500">
+          Полноэкранная сцена перед раундом — заменяет статичную заставку выше, когда задана. Все
+          ветки должны в итоге сходиться к одному узлу без «Дальше»/развилки — это и есть переход к
+          игре.
+        </p>
+        <DialogueTreeEditor
+          nodes={form.introDialogue}
+          onChange={(introDialogue) => setForm({ ...form, introDialogue })}
+          addTestId="admin-chapter-add-intro-node"
+        />
+      </div>
+
+      <div className="mt-4 border-t border-white/10 pt-4">
         <SectionHeading dense className="mb-2">
           Развязка по умолчанию
         </SectionHeading>
@@ -487,6 +738,21 @@ export function ChapterForm({
             onChange={(image) => setForm({ ...form, fallback: { ...form.fallback, image } })}
           />
         </div>
+      </div>
+
+      <div className="mt-4 border-t border-white/10 pt-4">
+        <SectionHeading dense className="mb-2">
+          Диалог после игры
+        </SectionHeading>
+        <p className="mb-3 text-xs text-neutral-500">
+          Полноэкранная сцена сразу после раунда, перед финальной модалкой (текст
+          финала/тизер/развилка ниже). Тоже должна сходиться к одному листовому узлу.
+        </p>
+        <DialogueTreeEditor
+          nodes={form.outroDialogue}
+          onChange={(outroDialogue) => setForm({ ...form, outroDialogue })}
+          addTestId="admin-chapter-add-outro-node"
+        />
       </div>
 
       <div className="mt-4 border-t border-white/10 pt-4">
@@ -509,7 +775,11 @@ export function ChapterForm({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <select
-                    value={row.tag === "fast" || row.tag === "slow" ? row.tag : "implement"}
+                    value={
+                      row.tag === "fast" || row.tag === "slow" || COMBO_TAG_SET.has(row.tag)
+                        ? row.tag
+                        : "implement"
+                    }
                     onChange={(e) => {
                       const value = e.target.value;
                       const nextTag: StoryTag =
@@ -523,6 +793,11 @@ export function ChapterForm({
                   >
                     <option value="fast">Быстро</option>
                     <option value="slow">Медленно</option>
+                    {COMBO_TAG_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
                     <option value="implement">Орудие…</option>
                   </select>
                   {row.tag.startsWith("implement-") && (

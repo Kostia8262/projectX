@@ -15,6 +15,27 @@ export type ChapterDecision = {
   options: [ChapterDecisionOption, ChapterDecisionOption];
 };
 
+// A short branching VN scene shown fullscreen (components/game/DialogueScene.tsx)
+// before or after a chapter's round — purely a narrative bridge, not a
+// persisted story-fork like ChapterDecision above: every path is expected to
+// converge back to one point (entering the round, or reaching the finale
+// modal), just at a different pace. Not enforced at parse time — only
+// referential integrity (every next/choice.next resolves to a real node id)
+// is validated; that all paths actually converge is on the content author.
+export type DialogueChoice = { label: string; next: string };
+
+export type DialogueNode = {
+  id: string;
+  speaker?: string; // e.g. the character's name or "Вы" — omit for narration
+  text: string;
+  image?: string; // background for this beat; unset falls back to the character's accent-color gradient
+  // Exactly one of these, or neither (a convergence/leaf node that ends the scene):
+  next?: string; // linear beat — id of the next node
+  choices?: DialogueChoice[]; // a fork — 2+ options, each pointing at a node id
+};
+
+export type DialogueTree = { nodes: DialogueNode[] }; // nodes[0] is the entry point
+
 // A chapter's narrative content is a fully independent copy of GameStory —
 // deliberately NOT shared with the pilot's free-play STORIES entry (see
 // lib/games/stories.ts). Editing a chapter in the admin panel must never
@@ -38,6 +59,11 @@ export type ChapterRecord = {
   // answering it appends one more character to the player's branch path.
   decision?: ChapterDecision;
   hints: ChapterHints;
+  // Both optional and independent — a chapter can have either, both, or
+  // neither. Absent means "skip the scene, keep today's behavior" (straight
+  // to the static story.intro screen / straight to the finale modal).
+  introDialogue?: DialogueTree; // shown before the round starts
+  outroDialogue?: DialogueTree; // shown after the round ends, before the finale modal
 };
 
 // Short in-character reaction lines the girl can "say" mid-round, shown as a

@@ -13,6 +13,7 @@ const TABS: { href: string; label: string; visible: (role: EmployeeRole) => bool
   { href: "/admin/transactions", label: "Транзакции", visible: () => true },
   { href: "/admin/games", label: "Игры", visible: canEditGames },
   { href: "/admin/chapters", label: "Главы", visible: canEditGames },
+  { href: "/admin/modules", label: "Модули", visible: canEditGames },
 ];
 
 export default function AdminLayout({ children }: { children: ReactNode }) {

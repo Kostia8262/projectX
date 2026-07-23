@@ -97,10 +97,12 @@ export function CharacterSelect({
   address,
   onSelect,
   onPlayChapter,
+  banner,
 }: {
   address: string;
   onSelect: (characterId: string) => void;
   onPlayChapter: (chapterId: string) => void;
+  banner?: React.ReactNode;
 }) {
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6 py-10">
@@ -111,16 +113,27 @@ export function CharacterSelect({
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-        {CHARACTERS.map((character) => (
-          <CharacterCard
-            key={character.id}
-            character={character}
-            address={address}
-            onSelect={onSelect}
-            onPlayChapter={onPlayChapter}
-          />
-        ))}
+      <div className="relative">
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+          {CHARACTERS.map((character) => (
+            <CharacterCard
+              key={character.id}
+              character={character}
+              address={address}
+              onSelect={onSelect}
+              onPlayChapter={onPlayChapter}
+            />
+          ))}
+        </div>
+
+        {/* Pinned outside the standard grid's width rather than taking a
+            flex column inside it, so the grid itself stays the normal
+            (non-sidebar) layout at every breakpoint. */}
+        {banner && (
+          <div className="mt-6 w-full lg:absolute lg:left-full lg:top-0 lg:mt-0 lg:ml-6 lg:w-64">
+            {banner}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -11,6 +11,7 @@ import { playTapSound, playReactionSound, playFinaleSound } from "@/lib/sound";
 import { CharacterStage } from "@/components/game/CharacterStage";
 import { OverrideControls } from "@/components/game/OverrideControls";
 import { useCharacterHint, CharacterHintToast } from "@/components/game/CharacterHint";
+import { DialogueScene } from "@/components/game/DialogueScene";
 import { PageTitle, SectionHeading, Eyebrow } from "@/components/ui/Heading";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -19,11 +20,14 @@ import { getCharacterForGame } from "@/lib/characters/registry";
 import { isOverrideActive, type OverrideState } from "@/lib/characters/override";
 import { loadFreshness, loadOverride, loadTraits } from "@/lib/characters/storage";
 import { recordBranchChoice } from "@/lib/characters/branch";
-import type { ChapterDecision, ChapterHints } from "@/lib/content/types";
+import type { ChapterDecision, ChapterHints, DialogueTree } from "@/lib/content/types";
 import {
+  classifyIntensity,
   freshnessCharge,
   implementBlockReason,
   IMPLEMENT_BLOCK_MESSAGES,
+  matchesTolerance,
+  moodTag,
   type FreshnessState,
   type TraitState,
 } from "@/lib/characters/traits";
@@ -37,7 +41,7 @@ function loadLifetimeHeat(address: string, gameId: string): number {
   return Number(window.localStorage.getItem(heatLifetimeKey(address, gameId)) ?? "0") || 0;
 }
 
-type Phase = "intro" | "playing" | "finale";
+type Phase = "dialogue-intro" | "intro" | "playing" | "dialogue-outro" | "finale";
 
 export function SpankGame({
   address,
@@ -48,6 +52,9 @@ export function SpankGame({
   decision,
   decisionIndex,
   hints,
+  introDialogue,
+  outroDialogue,
+  onFinishChapter,
 }: {
   address: string;
   game: GameDefinition;
@@ -57,11 +64,14 @@ export function SpankGame({
   decision?: ChapterDecision;
   decisionIndex?: number;
   hints?: ChapterHints;
+  introDialogue?: DialogueTree;
+  outroDialogue?: DialogueTree;
+  onFinishChapter?: () => void;
 }) {
   const { energy, max, spend } = useEnergyContext();
   const energyRefill = useEnergyRefill();
   const [heat, setHeat] = useState(0);
-  const [phase, setPhase] = useState<Phase>("intro");
+  const [phase, setPhase] = useState<Phase>(() => (introDialogue ? "dialogue-intro" : "intro"));
   const [finaleBeat, setFinaleBeat] = useState<StoryBeat | null>(null);
   const [pickedOptionId, setPickedOptionId] = useState<string | null>(null);
   const implements_ = implementsFor(game);
@@ -82,6 +92,9 @@ export function SpankGame({
   const stageRef = useRef(stageForHeat(0));
   const roundStartRef = useRef(performance.now());
   const heatRef = useRef(0);
+  // Per-tap history for THIS round only — feeds classifySessionQuality at
+  // finale time (games/sessionQuality.ts). Reset in handleNewRound.
+  const tapLogRef = useRef<TapOutcome[]>([]);
   const [pulseKey, setPulseKey] = useState(0);
   // storyOverride lets "chapter mode" (see chapters.ts) reuse this same
   // mechanic with a different narrative than the pilot's own default story.
@@ -94,12 +107,20 @@ export function SpankGame({
   function handleTap() {
     if (!selected || outOfEnergy || phase !== "playing") return;
     if (traits && character && implementBlockReason(traits, character, selected, overriding)) {
+      tapLogRef.current.push({ implementId: selected.id, blocked: true, matched: false, resonant: false });
       triggerBlocked();
       return;
     }
     if (!spend(1)) return;
     playTapSound();
     setPulseKey((k) => k + 1);
+
+    tapLogRef.current.push({
+      implementId: selected.id,
+      blocked: false,
+      matched: character ? matchesTolerance(character, classifyIntensity(selected, 0)) : true,
+      resonant: character ? character.preferredImplementIds.includes(selected.id) : false,
+    });
 
     const gained = selected.heatPerHit;
     // heatRef (not the `heat` state closure) is the source of truth so a
@@ -121,21 +142,29 @@ export function SpankGame({
 
     if (next >= game.maxHeat) {
       const durationMs = performance.now() - roundStartRef.current;
+      const sessionQuality = classifySessionQuality(tapLogRef.current, implements_.length);
+      // Mood is her disposition GOING IN to this round (snapshot from before
+      // this tap's applyRoundToCharacter below updates it) — a masterful
+      // session earns warmth for the NEXT round, not a retroactive rewrite
+      // of how this one is narrated.
+      const mood = traits ? moodTag(traits) : undefined;
       setFinaleBeat(
-        resolveStoryVariant(story, game.id, {
-          durationMs,
-          implementId: selected.id,
-          averagePace: 0,
-        })
+        resolveStoryVariant(
+          story,
+          game.id,
+          { durationMs, implementId: selected.id, averagePace: 0 },
+          mood,
+          sessionQuality
+        )
       );
-      applyRoundToCharacter(address, game.id, selected.id, 0);
+      applyRoundToCharacter(address, game.id, selected.id, 0, sessionQuality);
       if (character) {
         setTraits(loadTraits(address, character));
         setOverrideState(loadOverride(address, character.id));
         setFreshness(loadFreshness(address, character));
       }
       playFinaleSound();
-      setPhase("finale");
+      setPhase(outroDialogue ? "dialogue-outro" : "finale");
     }
   }
 
@@ -144,6 +173,7 @@ export function SpankGame({
     setHeat(0);
     stageRef.current = stageForHeat(0);
     roundStartRef.current = performance.now();
+    tapLogRef.current = [];
     setPickedOptionId(null);
     setPhase("playing");
   }
@@ -265,6 +295,22 @@ export function SpankGame({
         )}
       </div>
 
+      {phase === "dialogue-intro" && introDialogue && (
+        <DialogueScene
+          tree={introDialogue}
+          accentColor={character?.accentColor}
+          onComplete={() => setPhase("intro")}
+        />
+      )}
+
+      {phase === "dialogue-outro" && outroDialogue && (
+        <DialogueScene
+          tree={outroDialogue}
+          accentColor={character?.accentColor}
+          onComplete={() => setPhase("finale")}
+        />
+      )}
+
       {phase === "intro" && story && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/70 p-6 backdrop-blur-sm">
           <Card size="lg" className="max-w-md text-center">
@@ -347,9 +393,21 @@ export function SpankGame({
             <p className="mt-3 text-xs text-neutral-500">
               Прогресс в «Отклике» уже сохранён.
             </p>
-            <Button onClick={handleNewRound} data-testid="new-round-button" size="lg" className="mt-5">
-              Новый раунд
-            </Button>
+            <div className="mt-5 flex flex-col gap-2">
+              {onFinishChapter && (
+                <Button onClick={onFinishChapter} data-testid="finish-chapter-button" size="lg">
+                  Дальше →
+                </Button>
+              )}
+              <Button
+                onClick={handleNewRound}
+                data-testid="new-round-button"
+                size="lg"
+                variant={onFinishChapter ? "secondary" : "primary"}
+              >
+                Новый раунд
+              </Button>
+            </div>
           </Card>
         </div>
       )}

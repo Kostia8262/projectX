@@ -8,7 +8,7 @@ import type { AdminUserRow } from "@/app/api/admin/users/route";
 import { SectionHeading } from "@/components/ui/Heading";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Input, FORM_CONTROL_CLASS } from "@/components/ui/Input";
+import { Input, SELECT_CLASS } from "@/components/ui/Input";
 import { Table } from "@/components/ui/Table";
 import { useAdminWhoAmI } from "@/hooks/useAdminWhoAmI";
 import { canManageWallets, ROLE_LABELS } from "@/lib/admin/roles";
@@ -253,7 +253,7 @@ export default function WalletsPage() {
             <select
               value={accessoryId}
               onChange={(e) => setAccessoryId(e.target.value)}
-              className={FORM_CONTROL_CLASS}
+              className={SELECT_CLASS}
             >
               {ACCESSORIES.map((a) => (
                 <option key={a.id} value={a.id}>
@@ -277,7 +277,7 @@ export default function WalletsPage() {
               <select
                 value={tierId}
                 onChange={(e) => setTierId(Number(e.target.value))}
-                className={`flex-1 ${FORM_CONTROL_CLASS}`}
+                className={`flex-1 ${SELECT_CLASS}`}
               >
                 {PAID_TIERS.map((t) => (
                   <option key={t.id} value={t.contractTierId}>

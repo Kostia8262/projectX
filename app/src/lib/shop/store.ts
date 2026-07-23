@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { GameOverride } from "../games/registry";
 import type { EmployeeRole } from "../admin/roles";
+import type { ModuleId } from "../modules";
 
 // Server-side source of truth for shop state — coin balances, which
 // on-chain top-up transactions have already been credited (idempotency
@@ -66,6 +67,10 @@ type ShopState = {
   // on top of it. See games/registry.ts's applyGameOverrides and
   // api/games/overrides (public read) / api/admin/games (admin write).
   gameOverrides: Record<string, GameOverride>;
+  // Whole pages (see lib/modules.ts) an admin has switched off — moduleId ->
+  // true. Absence = enabled, same "only store the exception" shape as the
+  // rest of this file.
+  disabledModules: Record<string, true>;
 };
 
 function emptyState(): ShopState {
@@ -79,6 +84,7 @@ function emptyState(): ShopState {
     coinTopUpLog: [],
     grantedAdmins: {},
     gameOverrides: {},
+    disabledModules: {},
   };
 }
 
@@ -549,6 +555,36 @@ export async function setGrantedAdminRole(
     });
     await persist(state);
     return true;
+  });
+}
+
+export async function getDisabledModules(): Promise<ModuleId[]> {
+  return enqueue(async () => {
+    const state = await load();
+    return Object.keys(state.disabledModules) as ModuleId[];
+  });
+}
+
+export async function setModuleEnabled(
+  adminAddress: string,
+  moduleId: ModuleId,
+  enabled: boolean
+): Promise<void> {
+  return enqueue(async () => {
+    const state = await load();
+    if (enabled) {
+      delete state.disabledModules[moduleId];
+    } else {
+      state.disabledModules[moduleId] = true;
+    }
+    pushAdminLog(state, {
+      at: Date.now(),
+      admin: key(adminAddress),
+      action: enabled ? "enable-module" : "disable-module",
+      address: moduleId,
+      detail: "",
+    });
+    await persist(state);
   });
 }
 

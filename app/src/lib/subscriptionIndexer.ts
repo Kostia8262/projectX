@@ -52,17 +52,39 @@ let lastSyncedBlock: bigint = DEPLOYMENT_BLOCK - BigInt(1);
 if (lastSyncedBlock < BigInt(0)) lastSyncedBlock = BigInt(0);
 let syncPromise: Promise<void> | null = null;
 
-async function sync(): Promise<void> {
-  const latestBlock = await client.getBlockNumber();
-  if (latestBlock <= lastSyncedBlock) return;
-
-  const fromBlock = lastSyncedBlock === BigInt(0) ? BigInt(0) : lastSyncedBlock + BigInt(1);
-  const logs = await client.getLogs({
+// Split out so `logs`'s type below can be inferred from this one call site
+// (with `args` narrowed to the event's actual fields) — assigning through a
+// bare `ReturnType<typeof client.getLogs>` annotation loses that narrowing.
+function fetchPaymentLogs(fromBlock: bigint, toBlock: bigint) {
+  return client.getLogs({
     address: CONTRACT_ADDRESS,
     event: SUBSCRIPTION_PAID_EVENT,
     fromBlock,
-    toBlock: latestBlock,
+    toBlock,
   });
+}
+
+async function sync(): Promise<void> {
+  // The RPC node (local anvil/hardhat in dev) being down is routine, not
+  // exceptional — without this catch, every caller (subscription status,
+  // shop state, the admin wallets table) 500s outright instead of just
+  // falling back to whatever chain data was last synced (or admin
+  // overrides, which don't need the chain at all — see effectiveStatus.ts).
+  let latestBlock: bigint;
+  try {
+    latestBlock = await client.getBlockNumber();
+  } catch {
+    return;
+  }
+  if (latestBlock <= lastSyncedBlock) return;
+
+  const fromBlock = lastSyncedBlock === BigInt(0) ? BigInt(0) : lastSyncedBlock + BigInt(1);
+  let logs: Awaited<ReturnType<typeof fetchPaymentLogs>>;
+  try {
+    logs = await fetchPaymentLogs(fromBlock, latestBlock);
+  } catch {
+    return;
+  }
 
   for (const log of logs) {
     const subscriber = log.args.subscriber?.toLowerCase();

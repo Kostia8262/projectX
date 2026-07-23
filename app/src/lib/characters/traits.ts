@@ -1,5 +1,6 @@
 import type { CharacterDefinition } from "./registry";
 import type { Implement, RoundIntensity } from "../games/registry";
+import type { SessionQuality } from "../games/sessionQuality";
 
 // Five traits, deliberately coupled rather than independent — see the
 // per-field comments below for *why* each one moves the way it does.
@@ -58,10 +59,38 @@ const DEFIANCE_COOLDOWN_PER_HOUR: Record<CharacterDefinition["boredomRate"], num
   slow: 1,
 };
 
-// Both Boredom accrual and Defiance cooldown are real-elapsed-time effects
-// since the last completed round — same "regenerate on read" pattern as the
-// energy pool (see games/energy.ts), just computed fresh each read instead
-// of persisted on a tick.
+// Below this many hours since the last round, being away reads as a normal
+// break, not neglect — Affection/Submission don't move at all yet. Boredom
+// and Defiance are exempt from this grace window on purpose: missing you a
+// little right away is fine, actual distancing only starts after real absence.
+const NEGLECT_GRACE_HOURS = 48;
+
+// Same fast/slow axis as Boredom/Defiance above — a character who gets bored
+// quickly is also the one who reads silence as "did I do something wrong,"
+// so her trust erodes faster than a more independent character's would.
+const AFFECTION_DECAY_PER_HOUR: Record<CharacterDefinition["boredomRate"], number> = {
+  fast: 0.35,
+  slow: 0.15,
+};
+const SUBMISSION_DECAY_PER_HOUR: Record<CharacterDefinition["boredomRate"], number> = {
+  fast: 0.25,
+  slow: 0.1,
+};
+
+// Idle decay never erases the relationship entirely — she drifts, she
+// doesn't forget you. Only THIS decay path respects the floor; a bad scene
+// or an aftercare debuff can still push below it (that's an earned cost,
+// not idle drift).
+const AFFECTION_NEGLECT_FLOOR = 15;
+const SUBMISSION_NEGLECT_FLOOR = 10;
+
+// Boredom accrual and Defiance cooldown are real-elapsed-time effects since
+// the last completed round, same "regenerate on read" pattern as the energy
+// pool (see games/energy.ts) — computed fresh each read, never persisted on
+// a tick. Affection and Submission use the same elapsed-time input but only
+// start moving once NEGLECT_GRACE_HOURS has passed, and only ever downward,
+// floored so idle time alone can't zero out the bond — see the constants
+// above for why gates/thresholds differ from Boredom/Defiance's.
 export function applyTimeDecay(
   state: TraitState,
   character: CharacterDefinition,
@@ -69,11 +98,61 @@ export function applyTimeDecay(
 ): TraitState {
   const elapsedHours = (now - state.lastActiveAt) / (1000 * 60 * 60);
   if (elapsedHours <= 0) return state;
+  const rate = character.boredomRate;
+  const neglectHours = Math.max(0, elapsedHours - NEGLECT_GRACE_HOURS);
   return {
     ...state,
-    boredom: clamp(state.boredom + elapsedHours * BOREDOM_PER_HOUR[character.boredomRate]),
-    defiance: clamp(state.defiance - elapsedHours * DEFIANCE_COOLDOWN_PER_HOUR[character.boredomRate]),
+    boredom: clamp(state.boredom + elapsedHours * BOREDOM_PER_HOUR[rate]),
+    defiance: clamp(state.defiance - elapsedHours * DEFIANCE_COOLDOWN_PER_HOUR[rate]),
+    affection:
+      neglectHours > 0
+        ? clamp(Math.max(AFFECTION_NEGLECT_FLOOR, state.affection - neglectHours * AFFECTION_DECAY_PER_HOUR[rate]))
+        : state.affection,
+    submission:
+      neglectHours > 0
+        ? clamp(Math.max(SUBMISSION_NEGLECT_FLOOR, state.submission - neglectHours * SUBMISSION_DECAY_PER_HOUR[rate]))
+        : state.submission,
   };
+}
+
+// Minimum gap worth telling the player about — anything shorter is just
+// "closed the tab and came back," not a real return-after-absence moment.
+const IDLE_RECAP_MIN_HOURS = 6;
+
+export type IdleRecapDeltas = {
+  boredom: number;
+  defiance: number;
+  affection: number;
+  submission: number;
+};
+
+export type IdleRecap = {
+  elapsedHours: number;
+  deltas: IdleRecapDeltas;
+};
+
+// Compares the raw (pre-decay) stored state against what applyTimeDecay
+// produces for `now`, so the UI can show "while you were away" as a diff
+// instead of the player having to infer it from two absolute numbers. Takes
+// the raw snapshot as input (not a re-read) since storage.ts's loadTraits
+// already discards it after decaying — see getIdleRecap there.
+export function computeIdleRecap(
+  raw: TraitState,
+  character: CharacterDefinition,
+  now: number = Date.now()
+): IdleRecap | null {
+  const elapsedHours = (now - raw.lastActiveAt) / (1000 * 60 * 60);
+  if (elapsedHours < IDLE_RECAP_MIN_HOURS) return null;
+  const decayed = applyTimeDecay(raw, character, now);
+  const deltas: IdleRecapDeltas = {
+    boredom: decayed.boredom - raw.boredom,
+    defiance: decayed.defiance - raw.defiance,
+    affection: decayed.affection - raw.affection,
+    submission: decayed.submission - raw.submission,
+  };
+  const hasVisibleChange = Object.values(deltas).some((d) => Math.abs(d) >= 1);
+  if (!hasVisibleChange) return null;
+  return { elapsedHours, deltas };
 }
 
 // Per-implement "freshness" — a stamina pool per tool, same regen-on-read
@@ -161,6 +240,12 @@ export type RoundOutcome = {
   // Aftercare recovery window active — halves positive gains, doesn't touch
   // penalties. See applyAftercareDebuff/applyAftercareRelief below.
   recovering: boolean;
+  // Whole-round aggregate from games/sessionQuality.ts (implement variety +
+  // tolerance fit across every tap, not just the finishing implement) — a
+  // flat bonus/penalty layered on top of the per-implement vector math
+  // below, since "played this round well/badly overall" is a genuinely
+  // separate signal from "which single implement did she get hit with."
+  sessionQuality: SessionQuality;
 };
 
 // Mismatched tolerance guts Pleasure/Boredom-relief and amplifies
@@ -174,6 +259,16 @@ const RESONANCE_MULTIPLIER = 1.3;
 // She's still processing — growth continues during recovery, just slower.
 const RECOVERY_GAIN_MULTIPLIER = 0.5;
 
+// Layered on top of the per-implement vector math, not scaled by it — a
+// masterful round (varied, well-matched implements throughout) earns a
+// flat bonus regardless of which implement happened to land the finishing
+// hit; a clumsy one (spammed/mismatched/blocked taps) costs a flat penalty
+// the same way. Sized to roughly one implement-vector's worth of effect
+// (see games/registry.ts's per-implement `vector` values) so it reads as
+// "how you played," comparable in weight to "what you played with."
+const MASTERFUL_BONUS = { pleasure: 3, affection: 2, boredomRelief: 4 };
+const CLUMSY_PENALTY = { defiance: 3, boredom: 4 };
+
 export function applyRoundOutcome(state: TraitState, outcome: RoundOutcome): TraitState {
   const {
     implement,
@@ -184,6 +279,7 @@ export function applyRoundOutcome(state: TraitState, outcome: RoundOutcome): Tra
     freshnessCharge: charge,
     overriding,
     recovering,
+    sessionQuality,
   } = outcome;
   const { vector } = implement;
 
@@ -204,11 +300,11 @@ export function applyRoundOutcome(state: TraitState, outcome: RoundOutcome): Tra
   // Pleasure and Boredom-relief share the same multipliers — tolerance fit,
   // resonance with her preferences, how fresh this specific implement
   // currently is, and whether she's still in an aftercare recovery window.
-  const pleasureDelta = vector.pleasure * toleranceMult * resonanceMult * freshnessMult * recoveryMult;
+  let pleasureDelta = vector.pleasure * toleranceMult * resonanceMult * freshnessMult * recoveryMult;
   const boredomRelief = vector.boredomRelief * toleranceMult * resonanceMult * freshnessMult * recoveryMult;
   // Meeting a boredom-raised bar makes the relief count for more; missing it
   // means even a technically-fitting round barely registers.
-  const boredomDelta = -boredomRelief * (met ? 1.4 : 0.4);
+  let boredomDelta = -boredomRelief * (met ? 1.4 : 0.4);
 
   // Defiance-risk is the implement's own baseline "how testing is this,"
   // scaled by whether it actually fit — a mismatched round amplifies it,
@@ -216,7 +312,7 @@ export function applyRoundOutcome(state: TraitState, outcome: RoundOutcome): Tra
   // regardless of which implement was used. Under Карт-бланш matched/met are
   // forced true upstream, so this always lands on the calm branch — no
   // visible pushback during the pass, the cost shows up as aftercare after.
-  const defianceDelta = !matched
+  let defianceDelta = !matched
     ? vector.defianceRisk * DEFIANCE_MISMATCH_MULTIPLIER
     : !met
       ? vector.defianceRisk * 0.6 + 1
@@ -232,6 +328,18 @@ export function applyRoundOutcome(state: TraitState, outcome: RoundOutcome): Tra
   if (intensity === "intense" && state.submission < 40 && !overriding) affectionDelta -= 6;
   else if (!matched) affectionDelta -= 2;
   if (affectionDelta > 0) affectionDelta *= recoveryMult;
+
+  // Session-quality layer — masterful gains are gains, so they're dampened
+  // by the same recovery window as everything else; clumsy's cost lands at
+  // full strength regardless, same as every other penalty in this function.
+  if (sessionQuality === "masterful") {
+    pleasureDelta += MASTERFUL_BONUS.pleasure * recoveryMult;
+    affectionDelta += MASTERFUL_BONUS.affection * recoveryMult;
+    boredomDelta -= MASTERFUL_BONUS.boredomRelief * recoveryMult;
+  } else if (sessionQuality === "clumsy") {
+    defianceDelta += CLUMSY_PENALTY.defiance;
+    boredomDelta += CLUMSY_PENALTY.boredom;
+  }
 
   return {
     submission: clamp(state.submission + submissionGain),
@@ -330,10 +438,12 @@ export function isImplementBlocked(
 type StatusTier = { min: number; text: string };
 
 // Affection-only ladder, checked after the Boredom/Defiance urgency branches
-// below — Affection moves solely through played rounds (applyRoundOutcome),
-// never decays on its own, so this ladder reads as "how far the bond has
-// come," not "how recently you visited" (that's what the Boredom branch is
-// for). Tiers ordered high→low; first match wins. Written in each
+// below. Affection now does drift down on real neglect (see
+// AFFECTION_DECAY_PER_HOUR in applyTimeDecay above), but only past a
+// multi-day grace window and floored well above zero — so this ladder still
+// mostly reads as "how far the bond has come," with the Boredom branch
+// covering the sharper, faster "you just haven't visited in a while" read.
+// Tiers ordered high→low; first match wins. Written in each
 // character's own voice rather than one shared wording — see traitNotes for
 // why that matters here too.
 const AFFECTION_STATUS_LADDER: Record<string, StatusTier[]> = {
@@ -354,6 +464,17 @@ const AFFECTION_STATUS_LADDER: Record<string, StatusTier[]> = {
     { min: -Infinity, text: "Ада держит дистанцию — вы пока даже не в её списке." },
   ],
 };
+
+// Below this, low Affection alone reads as "cold" even without active
+// Defiance/Boredom — a snapshot used by resolveStoryVariant (games/stories.ts)
+// to pick between genuinely different finale texts, not just relationshipStatusLine's copy.
+const COLD_AFFECTION_FLOOR = 20;
+
+export function moodTag(traits: TraitState): "warm" | "cold" {
+  if (traits.defiance > 60 || traits.boredom > 60) return "cold";
+  if (traits.affection < COLD_AFFECTION_FLOOR) return "cold";
+  return "warm";
+}
 
 export function relationshipStatusLine(
   traits: TraitState,

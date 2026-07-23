@@ -1,5 +1,6 @@
 import { getCharacterForGame } from "./registry";
 import { getImplement } from "../games/registry";
+import type { SessionQuality } from "../games/sessionQuality";
 import { escalationMultiplier, isOverrideActive, isRecovering, recoveryHoursFor } from "./override";
 import { loadFreshness, loadOverride, loadTraits, saveFreshness, saveOverride, saveTraits } from "./storage";
 import {
@@ -19,7 +20,8 @@ export function applyRoundToCharacter(
   address: string,
   gameId: string,
   implementId: string,
-  averagePace: number
+  averagePace: number,
+  sessionQuality: SessionQuality
 ): void {
   const character = getCharacterForGame(gameId);
   const implement = getImplement(implementId);
@@ -46,6 +48,7 @@ export function applyRoundToCharacter(
     freshnessCharge: overriding ? 100 : freshnessCharge(freshness, implement.id),
     overriding,
     recovering,
+    sessionQuality,
   };
 
   let next = applyRoundOutcome(traits, outcome);

@@ -6,7 +6,7 @@ import type { EmployeeRow } from "@/app/api/admin/employees/route";
 import { SectionHeading } from "@/components/ui/Heading";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Input, FORM_CONTROL_CLASS } from "@/components/ui/Input";
+import { Input, SELECT_CLASS } from "@/components/ui/Input";
 import { Table } from "@/components/ui/Table";
 import { useAdminWhoAmI } from "@/hooks/useAdminWhoAmI";
 import { canManageEmployees, EMPLOYEE_ROLES, ROLE_LABELS, type EmployeeRole } from "@/lib/admin/roles";
@@ -129,7 +129,7 @@ export default function EmployeesPage() {
                     }
                     disabled={changeRole.isPending}
                     data-testid={`admin-employee-role-${e.address}`}
-                    className={`${FORM_CONTROL_CLASS} font-sans`}
+                    className={`${SELECT_CLASS} font-sans`}
                   >
                     {EMPLOYEE_ROLES.map((role) => (
                       <option key={role} value={role}>
@@ -184,7 +184,7 @@ export default function EmployeesPage() {
             value={newRole}
             onChange={(e) => setNewRole(e.target.value as EmployeeRole)}
             data-testid="admin-new-employee-role"
-            className={FORM_CONTROL_CLASS}
+            className={SELECT_CLASS}
           >
             {EMPLOYEE_ROLES.map((role) => (
               <option key={role} value={role}>

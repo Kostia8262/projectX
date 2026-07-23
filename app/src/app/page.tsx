@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AgeGate } from "@/components/AgeGate";
 import { ConnectWallet } from "@/components/ConnectWallet";
 import { EnergyBadge } from "@/components/EnergyBadge";
@@ -17,6 +17,7 @@ import { SubscriptionStatusBanner } from "@/components/SubscriptionStatusBanner"
 import { useSiweSession } from "@/hooks/useSiweSession";
 import { useEffectiveGame } from "@/hooks/useGameOverrides";
 import { useChapter } from "@/hooks/useChapters";
+import { useDisabledModules } from "@/hooks/useModules";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ChapterRecord } from "@/lib/content/types";
 import { getCharacter } from "@/lib/characters/registry";
@@ -50,6 +51,7 @@ function loadInitialView(): View {
 function AuthenticatedApp({ address }: { address: string }) {
   const queryClient = useQueryClient();
   const [view, setViewState] = useState<View>(loadInitialView);
+  const disabledModules = useDisabledModules();
 
   function setView(next: View) {
     setViewState(next);
@@ -57,6 +59,20 @@ function AuthenticatedApp({ address }: { address: string }) {
       window.sessionStorage.setItem(VIEW_STORAGE_KEY, JSON.stringify(next));
     }
   }
+
+  // Covers both a stale sessionStorage view restored on load and an admin
+  // disabling the module while it's the currently open tab — either way,
+  // bounce back to the main menu instead of leaving a switched-off page
+  // rendered on screen.
+  useEffect(() => {
+    if (
+      (view.kind === "shop" && disabledModules.has("shop")) ||
+      (view.kind === "subscription" && disabledModules.has("subscription"))
+    ) {
+      setView({ kind: "characters" });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view.kind, disabledModules]);
 
   const activeGame = useEffectiveGame(view.kind === "game" ? view.gameId : undefined);
   const activeChapter = useChapter(view.kind === "game" ? view.chapterId : undefined);
@@ -81,7 +97,7 @@ function AuthenticatedApp({ address }: { address: string }) {
       ? `← ${getCharacter(view.characterId)?.name ?? "Назад"}`
       : view.kind === "history"
         ? `← ${getCharacter(view.characterId)?.name ?? "Назад"}`
-        : "← Персонажи";
+        : "← Главная";
 
   function playChapter(chapterId: string) {
     // Not a hook call — reads whatever's already cached under the shared
@@ -111,17 +127,27 @@ function AuthenticatedApp({ address }: { address: string }) {
         <div className="flex items-center gap-3">
           <EnergyBadge />
           <button
-            onClick={() => setView({ kind: "shop" })}
-            className={`text-sm transition hover:text-white ${view.kind === "shop" ? "text-white" : "text-neutral-400"}`}
+            onClick={() => setView({ kind: "characters" })}
+            className={`text-sm transition hover:text-white ${view.kind === "characters" ? "text-white" : "text-neutral-400"}`}
           >
-            Магазин
+            Главная
           </button>
-          <button
-            onClick={() => setView({ kind: "subscription" })}
-            className={`text-sm transition hover:text-white ${view.kind === "subscription" ? "text-white" : "text-neutral-400"}`}
-          >
-            Подписка
-          </button>
+          {!disabledModules.has("shop") && (
+            <button
+              onClick={() => setView({ kind: "shop" })}
+              className={`text-sm transition hover:text-white ${view.kind === "shop" ? "text-white" : "text-neutral-400"}`}
+            >
+              Магазин
+            </button>
+          )}
+          {!disabledModules.has("subscription") && (
+            <button
+              onClick={() => setView({ kind: "subscription" })}
+              className={`text-sm transition hover:text-white ${view.kind === "subscription" ? "text-white" : "text-neutral-400"}`}
+            >
+              Подписка
+            </button>
+          )}
           <button
             onClick={() => setView({ kind: "cabinet" })}
             className={`text-sm transition hover:text-white ${view.kind === "cabinet" ? "text-white" : "text-neutral-400"}`}
@@ -154,7 +180,9 @@ function AuthenticatedApp({ address }: { address: string }) {
               onSelect={(characterId) => setView({ kind: "character", characterId })}
               onPlayChapter={playChapter}
               banner={
-                <SubscriptionStatusBanner onGoToSubscription={() => setView({ kind: "subscription" })} />
+                disabledModules.has("subscription") ? undefined : (
+                  <SubscriptionStatusBanner onGoToSubscription={() => setView({ kind: "subscription" })} />
+                )
               }
             />
           </div>
@@ -193,6 +221,11 @@ function AuthenticatedApp({ address }: { address: string }) {
               decision={activeChapter?.decision}
               decisionIndex={activeChapter ? activeChapter.order - 2 : undefined}
               hints={activeChapter?.hints}
+              introDialogue={activeChapter?.introDialogue}
+              outroDialogue={activeChapter?.outroDialogue}
+              onFinishChapter={
+                view.characterId ? () => setView({ kind: "character", characterId: view.characterId! }) : undefined
+              }
             />
           ) : (
             <SpankGame
@@ -204,6 +237,11 @@ function AuthenticatedApp({ address }: { address: string }) {
               decision={activeChapter?.decision}
               decisionIndex={activeChapter ? activeChapter.order - 2 : undefined}
               hints={activeChapter?.hints}
+              introDialogue={activeChapter?.introDialogue}
+              outroDialogue={activeChapter?.outroDialogue}
+              onFinishChapter={
+                view.characterId ? () => setView({ kind: "character", characterId: view.characterId! }) : undefined
+              }
             />
           )
         ) : null}

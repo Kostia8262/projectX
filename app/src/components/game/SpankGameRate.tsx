@@ -12,10 +12,12 @@ import {
 } from "@/lib/games/registry";
 import { spankButtonBackground } from "@/lib/games/style";
 import { STORIES, resolveStoryVariant, type GameStory, type StoryBeat } from "@/lib/games/stories";
+import { classifySessionQuality, type TapOutcome } from "@/lib/games/sessionQuality";
 import { playTapSound, playReactionSound, playFinaleSound } from "@/lib/sound";
 import { CharacterStage } from "@/components/game/CharacterStage";
 import { OverrideControls } from "@/components/game/OverrideControls";
 import { useCharacterHint, CharacterHintToast } from "@/components/game/CharacterHint";
+import { DialogueScene } from "@/components/game/DialogueScene";
 import { PageTitle, SectionHeading, Eyebrow } from "@/components/ui/Heading";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -24,11 +26,14 @@ import { getCharacterForGame } from "@/lib/characters/registry";
 import { isOverrideActive, type OverrideState } from "@/lib/characters/override";
 import { loadFreshness, loadOverride, loadTraits } from "@/lib/characters/storage";
 import { recordBranchChoice } from "@/lib/characters/branch";
-import type { ChapterDecision, ChapterHints } from "@/lib/content/types";
+import type { ChapterDecision, ChapterHints, DialogueTree } from "@/lib/content/types";
 import {
+  classifyIntensity,
   freshnessCharge,
   implementBlockReason,
   IMPLEMENT_BLOCK_MESSAGES,
+  matchesTolerance,
+  moodTag,
   type FreshnessState,
   type TraitState,
 } from "@/lib/characters/traits";
@@ -57,7 +62,7 @@ const RATE_SMOOTHING = 0.35;
 const RATE_DECAY_PER_TICK = 0.4;
 const RATE_DECAY_INTERVAL_MS = 200;
 
-type Phase = "intro" | "playing" | "finale";
+type Phase = "dialogue-intro" | "intro" | "playing" | "dialogue-outro" | "finale";
 
 export function SpankGameRate({
   address,
@@ -68,6 +73,9 @@ export function SpankGameRate({
   decision,
   decisionIndex,
   hints,
+  introDialogue,
+  outroDialogue,
+  onFinishChapter,
 }: {
   address: string;
   game: GameDefinition;
@@ -77,11 +85,14 @@ export function SpankGameRate({
   decision?: ChapterDecision;
   decisionIndex?: number;
   hints?: ChapterHints;
+  introDialogue?: DialogueTree;
+  outroDialogue?: DialogueTree;
+  onFinishChapter?: () => void;
 }) {
   const { energy, max, spend } = useEnergyContext();
   const energyRefill = useEnergyRefill();
   const [heat, setHeat] = useState(0);
-  const [phase, setPhase] = useState<Phase>("intro");
+  const [phase, setPhase] = useState<Phase>(() => (introDialogue ? "dialogue-intro" : "intro"));
   const [finaleBeat, setFinaleBeat] = useState<StoryBeat | null>(null);
   const [pickedOptionId, setPickedOptionId] = useState<string | null>(null);
   const [rate, setRate] = useState(0);
@@ -107,6 +118,9 @@ export function SpankGameRate({
   const paceSumRef = useRef(0);
   const paceSamplesRef = useRef(0);
   const heatRef = useRef(0);
+  // Per-tap history for THIS round only — feeds classifySessionQuality at
+  // finale time (games/sessionQuality.ts). Reset in handleNewRound.
+  const tapLogRef = useRef<TapOutcome[]>([]);
   const [pulseKey, setPulseKey] = useState(0);
   // storyOverride lets "chapter mode" (see chapters.ts) reuse this same
   // mechanic with a different narrative than the pilot's own default story.
@@ -133,6 +147,7 @@ export function SpankGameRate({
   function handleTap() {
     if (!selected || outOfEnergy || phase !== "playing") return;
     if (traits && character && implementBlockReason(traits, character, selected, overriding)) {
+      tapLogRef.current.push({ implementId: selected.id, blocked: true, matched: false, resonant: false });
       triggerBlocked();
       return;
     }
@@ -156,6 +171,13 @@ export function SpankGameRate({
     playTapSound();
     setPulseKey((k) => k + 1);
 
+    tapLogRef.current.push({
+      implementId: selected.id,
+      blocked: false,
+      matched: character ? matchesTolerance(character, classifyIntensity(selected, rateRef.current)) : true,
+      resonant: character ? character.preferredImplementIds.includes(selected.id) : false,
+    });
+
     const gained = selected.heatPerHit * (1 + rateRef.current * HEAT_RATE_FACTOR);
     // heatRef, not the `heat` state closure, is the source of truth — same
     // rapid-tap race the energy pool already hit once (see EnergyContext).
@@ -175,21 +197,27 @@ export function SpankGameRate({
     if (next >= game.maxHeat) {
       const durationMs = now - roundStartRef.current;
       const averagePace = paceSamplesRef.current > 0 ? paceSumRef.current / paceSamplesRef.current : 0;
+      const sessionQuality = classifySessionQuality(tapLogRef.current, implements_.length);
+      // Mood is her disposition GOING IN to this round — see the matching
+      // comment in SpankGame.tsx's finale block.
+      const mood = traits ? moodTag(traits) : undefined;
       setFinaleBeat(
-        resolveStoryVariant(story, game.id, {
-          durationMs,
-          implementId: selected.id,
-          averagePace,
-        })
+        resolveStoryVariant(
+          story,
+          game.id,
+          { durationMs, implementId: selected.id, averagePace },
+          mood,
+          sessionQuality
+        )
       );
-      applyRoundToCharacter(address, game.id, selected.id, averagePace);
+      applyRoundToCharacter(address, game.id, selected.id, averagePace, sessionQuality);
       if (character) {
         setTraits(loadTraits(address, character));
         setOverrideState(loadOverride(address, character.id));
         setFreshness(loadFreshness(address, character));
       }
       playFinaleSound();
-      setPhase("finale");
+      setPhase(outroDialogue ? "dialogue-outro" : "finale");
     }
   }
 
@@ -203,6 +231,7 @@ export function SpankGameRate({
     rateRef.current = 0;
     setRate(0);
     lastTapRef.current = null;
+    tapLogRef.current = [];
     setPickedOptionId(null);
     setPhase("playing");
   }
@@ -337,6 +366,22 @@ export function SpankGameRate({
         )}
       </div>
 
+      {phase === "dialogue-intro" && introDialogue && (
+        <DialogueScene
+          tree={introDialogue}
+          accentColor={character?.accentColor}
+          onComplete={() => setPhase("intro")}
+        />
+      )}
+
+      {phase === "dialogue-outro" && outroDialogue && (
+        <DialogueScene
+          tree={outroDialogue}
+          accentColor={character?.accentColor}
+          onComplete={() => setPhase("finale")}
+        />
+      )}
+
       {phase === "intro" && story && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/70 p-6 backdrop-blur-sm">
           <Card size="lg" className="max-w-md text-center">
@@ -419,9 +464,21 @@ export function SpankGameRate({
             <p className="mt-3 text-xs text-neutral-500">
               Прогресс в «Отклике» уже сохранён.
             </p>
-            <Button onClick={handleNewRound} data-testid="new-round-button" size="lg" className="mt-5">
-              Новый раунд
-            </Button>
+            <div className="mt-5 flex flex-col gap-2">
+              {onFinishChapter && (
+                <Button onClick={onFinishChapter} data-testid="finish-chapter-button" size="lg">
+                  Дальше →
+                </Button>
+              )}
+              <Button
+                onClick={handleNewRound}
+                data-testid="new-round-button"
+                size="lg"
+                variant={onFinishChapter ? "secondary" : "primary"}
+              >
+                Новый раунд
+              </Button>
+            </div>
           </Card>
         </div>
       )}

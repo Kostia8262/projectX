@@ -9,6 +9,9 @@ import {
   type ChapterDecisionOption,
   type ChapterHints,
   type ChapterInput,
+  type DialogueChoice,
+  type DialogueNode,
+  type DialogueTree,
 } from "@/lib/content/types";
 import { createChapter, updateChapter, deleteChapter } from "@/lib/content/store";
 
@@ -18,8 +21,11 @@ const CHARACTER_IDS = new Set(CHARACTERS.map((c) => c.id));
 const CHAPTER_GAME_IDS = new Set(GAMES.filter((g) => g.type === "chapter").map((g) => g.id));
 const IMPLEMENT_IDS = new Set(IMPLEMENTS.map((i) => i.id));
 
+const COMBO_TAGS = new Set(["masterful-warm", "masterful-cold", "clumsy-warm", "clumsy-cold"]);
+
 function isValidTag(tag: string): boolean {
   if (tag === "fast" || tag === "slow") return true;
+  if (COMBO_TAGS.has(tag)) return true;
   const match = /^implement-(.+)$/.exec(tag);
   return match !== null && IMPLEMENT_IDS.has(match[1]);
 }
@@ -129,6 +135,88 @@ function parseHints(raw: unknown): ChapterHints | null {
   return { stage: stage as ChapterHints["stage"], blocked };
 }
 
+function parseDialogueChoice(raw: unknown): DialogueChoice | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.label !== "string" || !r.label.trim()) return null;
+  if (typeof r.next !== "string" || !r.next.trim()) return null;
+  return { label: r.label, next: r.next };
+}
+
+// A node is exactly one of: linear (`next`), a fork (`choices`, 2+ options),
+// or a leaf (neither) — referential integrity of next/choices[].next against
+// the tree's own node ids is checked by the caller (parseDialogueTree),
+// since a single node can't validate that on its own.
+function parseDialogueNode(raw: unknown): DialogueNode | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.id !== "string" || !r.id.trim()) return null;
+  if (typeof r.text !== "string" || !r.text.trim()) return null;
+  if (r.speaker !== undefined && typeof r.speaker !== "string") return null;
+  if (r.image !== undefined && typeof r.image !== "string") return null;
+
+  const hasNext = r.next !== undefined;
+  const hasChoices = r.choices !== undefined;
+  if (hasNext && hasChoices) return null;
+
+  let next: string | undefined;
+  if (hasNext) {
+    if (typeof r.next !== "string" || !r.next.trim()) return null;
+    next = r.next;
+  }
+
+  let choices: DialogueChoice[] | undefined;
+  if (hasChoices) {
+    if (!Array.isArray(r.choices) || r.choices.length < 2) return null;
+    choices = [];
+    for (const raw of r.choices) {
+      const choice = parseDialogueChoice(raw);
+      if (!choice) return null;
+      choices.push(choice);
+    }
+  }
+
+  return {
+    id: r.id,
+    text: r.text,
+    ...(r.speaker ? { speaker: r.speaker as string } : {}),
+    ...(r.image ? { image: r.image as string } : {}),
+    ...(next !== undefined ? { next } : {}),
+    ...(choices !== undefined ? { choices } : {}),
+  };
+}
+
+// undefined/null (field omitted) means "no scene here" — valid, that's the
+// default for every chapter today. Anything else must be a fully-formed,
+// internally-consistent tree; there's no partial-save state for this field.
+function parseDialogueTree(raw: unknown): DialogueTree | null | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  if (!Array.isArray(r.nodes) || r.nodes.length === 0) return null;
+
+  const nodes: DialogueNode[] = [];
+  const ids = new Set<string>();
+  for (const raw of r.nodes) {
+    const node = parseDialogueNode(raw);
+    if (!node) return null;
+    if (ids.has(node.id)) return null;
+    ids.add(node.id);
+    nodes.push(node);
+  }
+
+  for (const node of nodes) {
+    if (node.next !== undefined && !ids.has(node.next)) return null;
+    if (node.choices) {
+      for (const choice of node.choices) {
+        if (!ids.has(choice.next)) return null;
+      }
+    }
+  }
+
+  return { nodes };
+}
+
 function parseChapterInput(body: unknown): ChapterInput | null {
   if (typeof body !== "object" || body === null) return null;
   const r = body as Record<string, unknown>;
@@ -148,6 +236,10 @@ function parseChapterInput(body: unknown): ChapterInput | null {
   if (decision === null) return null;
   const hints = parseHints(r.hints);
   if (hints === null) return null;
+  const introDialogue = parseDialogueTree(r.introDialogue);
+  if (introDialogue === null) return null;
+  const outroDialogue = parseDialogueTree(r.outroDialogue);
+  if (outroDialogue === null) return null;
 
   return {
     characterId: r.characterId,
@@ -160,6 +252,8 @@ function parseChapterInput(body: unknown): ChapterInput | null {
     branchPath,
     hints,
     ...(decision !== undefined ? { decision } : {}),
+    ...(introDialogue !== undefined ? { introDialogue } : {}),
+    ...(outroDialogue !== undefined ? { outroDialogue } : {}),
   };
 }
 

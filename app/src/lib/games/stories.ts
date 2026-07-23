@@ -1,3 +1,5 @@
+import type { SessionQuality } from "./sessionQuality";
+
 // One narrative frame per pilot: a short intro shown before the first round
 // of a session, and a small set of finale variants chosen from how the round
 // was actually played (speed, implement in use at the finish). Content stays
@@ -9,7 +11,19 @@ export type RoundResult = {
   averagePace: number; // 0 for fixed-mechanic games, smoothed taps/sec for "rate"
 };
 
-export type StoryTag = "fast" | "slow" | `implement-${string}`;
+// The 4 "masterful-*"/"clumsy-*" tags combine session quality (see
+// games/sessionQuality.ts) with the character's mood snapshot (see
+// characters/traits.ts's moodTag) — checked ahead of implement/fast/slow in
+// resolveStoryVariant below, but only fire when both signals are provided
+// and the session was clearly good or clearly bad, not the average case.
+export type StoryTag =
+  | "fast"
+  | "slow"
+  | `implement-${string}`
+  | "masterful-warm"
+  | "masterful-cold"
+  | "clumsy-warm"
+  | "clumsy-cold";
 
 // A single narrative beat: text plus an optional image. Shared by both the
 // pilot's own free-play story (STORIES below, image always unset — no admin
@@ -178,7 +192,26 @@ const RATE_MECHANIC_GAME_IDS = new Set([
 // matching logic works for both a pilot's free-play story AND a chapter's
 // independent one — only the pacing thresholds stay keyed by gameId, since
 // those calibrate the MECHANIC, not the narrative source.
-export function resolveStoryVariant(story: GameStory, gameId: string, result: RoundResult): StoryBeat {
+//
+// `mood`/`sessionQuality` are optional and checked first, ahead of the
+// implement tag — a clear "she's unhappy" or "that was masterful" signal
+// says more than which implement happened to land the final hit. Neither
+// param is required: callers that don't pass them (or pilots whose
+// `variants` never define these combo tags) fall straight through to the
+// pre-existing implement/fast/slow/fallback behavior, unchanged.
+export function resolveStoryVariant(
+  story: GameStory,
+  gameId: string,
+  result: RoundResult,
+  mood?: "warm" | "cold",
+  sessionQuality?: SessionQuality
+): StoryBeat {
+  if (mood && sessionQuality && sessionQuality !== "neutral") {
+    const comboTag = `${sessionQuality}-${mood}` as StoryTag;
+    const comboVariant = story.variants[comboTag];
+    if (comboVariant) return comboVariant;
+  }
+
   const implementTag = `implement-${result.implementId}` as StoryTag;
   const implementVariant = story.variants[implementTag];
   if (implementVariant) return implementVariant;

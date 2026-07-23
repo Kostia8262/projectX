@@ -1,7 +1,15 @@
 import type { CharacterDefinition } from "./registry";
 import type { OverrideState } from "./override";
 import { IMPLEMENTS } from "../games/registry";
-import { applyTimeDecay, createInitialTraits, decayFreshness, type FreshnessState, type TraitState } from "./traits";
+import {
+  applyTimeDecay,
+  computeIdleRecap,
+  createInitialTraits,
+  decayFreshness,
+  type FreshnessState,
+  type IdleRecap,
+  type TraitState,
+} from "./traits";
 
 function traitsKey(address: string, characterId: string): string {
   return `kink-traits-${characterId}-${address.toLowerCase()}`;
@@ -15,11 +23,26 @@ function overrideKey(address: string, characterId: string): string {
   return `kink-override-${characterId}-${address.toLowerCase()}`;
 }
 
-export function loadTraits(address: string, character: CharacterDefinition): TraitState {
+// Pre-decay snapshot exactly as persisted — the only consumer today is
+// getIdleRecap below, which needs the undecayed values to diff against.
+// Everything else should keep calling loadTraits.
+function loadRawTraits(address: string, character: CharacterDefinition): TraitState {
   if (typeof window === "undefined") return createInitialTraits(character);
   const raw = window.localStorage.getItem(traitsKey(address, character.id));
-  const base: TraitState = raw ? JSON.parse(raw) : createInitialTraits(character);
-  return applyTimeDecay(base, character);
+  return raw ? JSON.parse(raw) : createInitialTraits(character);
+}
+
+export function loadTraits(address: string, character: CharacterDefinition): TraitState {
+  return applyTimeDecay(loadRawTraits(address, character), character);
+}
+
+// "While you were away" diff for the CharacterPage banner — null when there's
+// nothing worth telling the player (just opened the app, or the gap was too
+// short to move anything a visible amount). See computeIdleRecap for the
+// actual math; this just supplies the raw pre-decay snapshot it needs.
+export function getIdleRecap(address: string, character: CharacterDefinition): IdleRecap | null {
+  if (typeof window === "undefined") return null;
+  return computeIdleRecap(loadRawTraits(address, character), character);
 }
 
 export function saveTraits(address: string, characterId: string, state: TraitState): void {

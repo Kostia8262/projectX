@@ -12,7 +12,8 @@ import {
 import { SectionHeading } from "@/components/ui/Heading";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Input, FORM_CONTROL_CLASS } from "@/components/ui/Input";
+import { Input, FORM_CONTROL_CLASS, SELECT_CLASS } from "@/components/ui/Input";
+import { Table } from "@/components/ui/Table";
 import { useAdminWhoAmI } from "@/hooks/useAdminWhoAmI";
 import { canEditGames, ROLE_LABELS } from "@/lib/admin/roles";
 
@@ -159,70 +160,58 @@ export default function GamesPage() {
             </Button>
           ))}
         </div>
-        <div className="overflow-x-auto rounded-xl border border-white/10">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-white/[0.04] text-neutral-400">
-              <tr>
-                <th className="px-3 py-2">ID</th>
-                <th className="px-3 py-2">Название</th>
-                <th className="px-3 py-2">Тег</th>
-                <th className="px-3 py-2">Тип</th>
-                <th className="px-3 py-2">maxHeat</th>
-                <th className="px-3 py-2">Статус</th>
-                <th className="px-3 py-2" />
-              </tr>
-            </thead>
-            <tbody>
-              {gamesQuery.isLoading && (
-                <tr>
-                  <td className="px-3 py-3 text-neutral-500" colSpan={7}>
-                    Загрузка…
-                  </td>
-                </tr>
-              )}
-              {!gamesQuery.isLoading && visibleGames.length === 0 && (
-                <tr>
-                  <td className="px-3 py-3 text-neutral-500" colSpan={7}>
-                    Нет игр этого типа.
-                  </td>
-                </tr>
-              )}
-              {visibleGames.map((game) => {
-                const overridden = Boolean(overrides[game.id]);
-                return (
-                  <tr
-                    key={game.id}
-                    onClick={() => selectGame(game)}
-                    data-testid={`admin-game-${game.id}`}
-                    className={`cursor-pointer border-t border-white/5 hover:bg-white/[0.04] ${
-                      selectedId === game.id ? "bg-fuchsia-500/10" : ""
-                    }`}
+        <Table
+          columns={["ID", "Название", "Тег", "Тип", "maxHeat", "Статус", ""]}
+          columnWidths={["w-28", "w-44", "w-40", "w-20", "w-20", "w-24", "w-20"]}
+        >
+          {gamesQuery.isLoading && (
+            <tr>
+              <td className="px-3 py-3 text-neutral-500" colSpan={7}>
+                Загрузка…
+              </td>
+            </tr>
+          )}
+          {!gamesQuery.isLoading && visibleGames.length === 0 && (
+            <tr>
+              <td className="px-3 py-3 text-neutral-500" colSpan={7}>
+                Нет игр этого типа.
+              </td>
+            </tr>
+          )}
+          {visibleGames.map((game) => {
+            const overridden = Boolean(overrides[game.id]);
+            return (
+              <tr
+                key={game.id}
+                onClick={() => selectGame(game)}
+                data-testid={`admin-game-${game.id}`}
+                className={`cursor-pointer border-t border-white/5 hover:bg-white/[0.04] ${
+                  selectedId === game.id ? "bg-fuchsia-500/10" : ""
+                }`}
+              >
+                <td className="truncate px-3 py-2 font-mono text-neutral-400">{game.id}</td>
+                <td className="truncate px-3 py-2 text-neutral-200">{game.title}</td>
+                <td className="truncate px-3 py-2 text-neutral-400">{game.tagline}</td>
+                <td className="px-3 py-2">
+                  <span className={game.type === "chapter" ? "text-indigo-300" : "text-neutral-400"}>
+                    {game.type === "chapter" ? "глава" : "свободная"}
+                  </span>
+                </td>
+                <td className="px-3 py-2 text-neutral-400">{game.maxHeat}</td>
+                <td className="px-3 py-2">
+                  <span
+                    className={game.status === "available" ? "text-emerald-400" : "text-neutral-500"}
                   >
-                    <td className="px-3 py-2 font-mono text-neutral-400">{game.id}</td>
-                    <td className="px-3 py-2 text-neutral-200">{game.title}</td>
-                    <td className="px-3 py-2 text-neutral-400">{game.tagline}</td>
-                    <td className="px-3 py-2">
-                      <span className={game.type === "chapter" ? "text-indigo-300" : "text-neutral-400"}>
-                        {game.type === "chapter" ? "глава" : "свободная"}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-neutral-400">{game.maxHeat}</td>
-                    <td className="px-3 py-2">
-                      <span
-                        className={game.status === "available" ? "text-emerald-400" : "text-neutral-500"}
-                      >
-                        {game.status === "available" ? "включена" : "скоро"}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2">
-                      {overridden && <span className="text-xs text-amber-400/80">изменено</span>}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                    {game.status === "available" ? "включена" : "скоро"}
+                  </span>
+                </td>
+                <td className="px-3 py-2">
+                  {overridden && <span className="text-xs text-amber-400/80">изменено</span>}
+                </td>
+              </tr>
+            );
+          })}
+        </Table>
       </div>
 
       {selectedBase && form && (
@@ -243,7 +232,7 @@ export default function GamesPage() {
                 value={form.status}
                 onChange={(e) => setForm({ ...form, status: e.target.value as GameStatus })}
                 data-testid="admin-game-status"
-                className={FORM_CONTROL_CLASS}
+                className={SELECT_CLASS}
               >
                 <option value="available">включена (available)</option>
                 <option value="coming-soon">выключена (coming-soon)</option>
