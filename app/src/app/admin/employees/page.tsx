@@ -111,7 +111,7 @@ export default function EmployeesPage() {
                         onClick={() => removeEmployee.mutate(e.address)}
                         disabled={removeEmployee.isPending}
                         data-testid={`admin-remove-employee-${e.address}`}
-                        className="font-sans text-rose-400 hover:text-rose-300 disabled:opacity-50"
+                        className="text-rose-400 hover:text-rose-300 disabled:opacity-50"
                       >
                         Убрать
                       </button>
@@ -124,39 +124,43 @@ export default function EmployeesPage() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
-        <h2 className="mb-3 text-sm font-semibold text-white">Выдать доступ</h2>
+      <Card>
+        <SectionHeading dense className="mb-3">
+          Выдать доступ
+        </SectionHeading>
         {error && <p className="mb-3 text-xs text-rose-400">{error}</p>}
         <div className="flex flex-col gap-3 sm:flex-row">
-          <input
+          <Input
             value={newAddress}
             onChange={(e) => setNewAddress(e.target.value)}
             placeholder="0x…"
             data-testid="admin-new-employee-address"
-            className="flex-1 rounded-lg border border-white/10 bg-black/20 px-3 py-2 font-mono text-xs text-white outline-none focus:border-fuchsia-400/50"
+            className="flex-1 py-2 font-mono"
           />
-          <input
+          <Input
             value={newLabel}
             onChange={(e) => setNewLabel(e.target.value)}
             placeholder="метка (кто это, необязательно)"
-            className="flex-1 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-white outline-none focus:border-fuchsia-400/50"
+            className="flex-1 py-2"
           />
-          <button
+          <Button
             onClick={() => {
               setError(null);
               addEmployee.mutate();
             }}
             disabled={addEmployee.isPending || !newAddress}
             data-testid="admin-add-employee"
-            className="rounded-lg bg-gradient-to-r from-fuchsia-500 to-indigo-500 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
+            size="sm"
           >
             {addEmployee.isPending ? "…" : "Добавить"}
-          </button>
+          </Button>
         </div>
-      </div>
+      </Card>
 
       <div>
-        <h2 className="mb-2 text-sm font-semibold text-white">Журнал действий админов</h2>
+        <SectionHeading dense className="mb-2">
+          Журнал действий админов
+        </SectionHeading>
         <div className="max-h-64 overflow-y-auto rounded-xl border border-white/10">
           <table className="w-full text-left text-xs">
             <thead className="bg-white/[0.04] text-neutral-400">

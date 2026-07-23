@@ -16,9 +16,9 @@ function overrideKey(address: string, characterId: string): string {
 }
 
 export function loadTraits(address: string, character: CharacterDefinition): TraitState {
-  if (typeof window === "undefined") return createInitialTraits();
+  if (typeof window === "undefined") return createInitialTraits(character);
   const raw = window.localStorage.getItem(traitsKey(address, character.id));
-  const base: TraitState = raw ? JSON.parse(raw) : createInitialTraits();
+  const base: TraitState = raw ? JSON.parse(raw) : createInitialTraits(character);
   return applyTimeDecay(base, character);
 }
 

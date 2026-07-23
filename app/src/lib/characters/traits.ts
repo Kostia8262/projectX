@@ -18,15 +18,31 @@ function clamp(n: number): number {
   return Math.max(MIN, Math.min(MAX, n));
 }
 
-export function createInitialTraits(): TraitState {
-  return {
-    submission: 15,
-    pleasure: 15,
-    boredom: 0,
-    defiance: 10,
-    affection: 15,
-    lastActiveAt: Date.now(),
-  };
+type InitialTraitProfile = Omit<TraitState, "lastActiveAt">;
+
+// Starting point differs per character, not just how fast traits move from
+// there. Рин already chose you after weeks of watching — some initial
+// warmth, low defiance, she's not confrontational by nature. Ада opens on
+// her own "exam" framing — higher defiance, lower trust, and a pre-set
+// boredom baseline since she's already seen partners before you.
+const INITIAL_TRAITS_BY_CHARACTER: Record<string, InitialTraitProfile> = {
+  rin: { submission: 15, pleasure: 15, boredom: 0, defiance: 5, affection: 20 },
+  ada: { submission: 10, pleasure: 15, boredom: 10, defiance: 20, affection: 10 },
+};
+
+// Fallback for any character without a defined profile above — degrades to
+// the old flat defaults instead of crashing.
+const DEFAULT_INITIAL_TRAITS: InitialTraitProfile = {
+  submission: 15,
+  pleasure: 15,
+  boredom: 0,
+  defiance: 10,
+  affection: 15,
+};
+
+export function createInitialTraits(character: CharacterDefinition): TraitState {
+  const profile = INITIAL_TRAITS_BY_CHARACTER[character.id] ?? DEFAULT_INITIAL_TRAITS;
+  return { ...profile, lastActiveAt: Date.now() };
 }
 
 const BOREDOM_PER_HOUR: Record<CharacterDefinition["boredomRate"], number> = {

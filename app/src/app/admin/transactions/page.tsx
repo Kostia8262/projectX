@@ -4,6 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { SUBSCRIPTION_TIERS } from "@/lib/subscription/tiers";
 import type { AdminTransaction } from "@/app/api/admin/transactions/route";
 import type { AdminDiagnostics } from "@/lib/admin/diagnostics";
+import { SectionHeading } from "@/components/ui/Heading";
+import { Tile } from "@/components/ui/Card";
 
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
@@ -33,7 +35,9 @@ export default function TransactionsPage() {
   return (
     <div className="flex flex-col gap-8">
       <div>
-        <h2 className="mb-2 text-sm font-semibold text-white">История платежей</h2>
+        <SectionHeading dense className="mb-2">
+          История платежей
+        </SectionHeading>
         <p className="mb-2 text-xs text-neutral-500">
           Реальные ончейн-события (подписки и топ-апы монет), а не текущий баланс — до 100
           последних.
@@ -85,7 +89,9 @@ export default function TransactionsPage() {
       </div>
 
       <div>
-        <h2 className="mb-2 text-sm font-semibold text-white">Диагностика конфигурации</h2>
+        <SectionHeading dense className="mb-2">
+          Диагностика конфигурации
+        </SectionHeading>
         <p className="mb-2 text-xs text-neutral-500">
           Что из платёжной инфраструктуры реально настроено на этом окружении — значения не
           показываются, только факт наличия. Полезно смотреть сюда, если история выше выглядит
@@ -121,7 +127,7 @@ export default function TransactionsPage() {
         </div>
         {diagnosticsQuery.data && (
           <div className="mt-3 grid grid-cols-1 gap-3 text-xs text-neutral-400 sm:grid-cols-2">
-            <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+            <Tile size="md">
               <p className="mb-1 font-medium text-neutral-300">Индексер подписки</p>
               <p>RPC: {diagnosticsQuery.data.subscriptionIndexer.rpcUrl}</p>
               <p>
@@ -133,8 +139,8 @@ export default function TransactionsPage() {
                 )}
               </p>
               <p>Последний блок: {diagnosticsQuery.data.subscriptionIndexer.lastSyncedBlock}</p>
-            </div>
-            <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+            </Tile>
+            <Tile size="md">
               <p className="mb-1 font-medium text-neutral-300">Индексер монет</p>
               <p>RPC: {diagnosticsQuery.data.coinIndexer.rpcUrl}</p>
               <p>
@@ -146,7 +152,7 @@ export default function TransactionsPage() {
                 )}
               </p>
               <p>Последний блок: {diagnosticsQuery.data.coinIndexer.lastSyncedBlock}</p>
-            </div>
+            </Tile>
           </div>
         )}
       </div>

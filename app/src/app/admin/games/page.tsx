@@ -3,6 +3,10 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { applyGameOverrides, type GameDefinition, type GameOverride, type GameStatus } from "@/lib/games/registry";
+import { SectionHeading } from "@/components/ui/Heading";
+import { Card } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
+import { Input, FORM_CONTROL_CLASS } from "@/components/ui/Input";
 
 type GamesResponse = { games: GameDefinition[]; overrides: Record<string, GameOverride> };
 
@@ -99,7 +103,9 @@ export default function GamesPage() {
   return (
     <div className="flex flex-col gap-8">
       <div>
-        <h2 className="mb-2 text-sm font-semibold text-white">Игры</h2>
+        <SectionHeading dense className="mb-2">
+          Игры
+        </SectionHeading>
         <p className="mb-3 text-xs text-neutral-500">
           Базовые данные (id, набор орудий, механика) — в коде, <code>games/registry.ts</code>, тут не
           редактируются. Статус и текстовые поля можно переопределить — правки сразу видны игрокам
@@ -159,8 +165,10 @@ export default function GamesPage() {
       </div>
 
       {selectedBase && form && (
-        <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
-          <h2 className="mb-1 text-sm font-semibold text-white">Редактировать: {selectedBase.id}</h2>
+        <Card>
+          <SectionHeading dense className="mb-1">
+            Редактировать: {selectedBase.id}
+          </SectionHeading>
           <p className="mb-4 text-xs text-neutral-500">
             По умолчанию (из кода): «{selectedBase.title}», {selectedBase.status === "available" ? "включена" : "скоро"},
             maxHeat {selectedBase.maxHeat}.
@@ -174,7 +182,7 @@ export default function GamesPage() {
                 value={form.status}
                 onChange={(e) => setForm({ ...form, status: e.target.value as GameStatus })}
                 data-testid="admin-game-status"
-                className="rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-xs text-white outline-none"
+                className={FORM_CONTROL_CLASS}
               >
                 <option value="available">включена (available)</option>
                 <option value="coming-soon">выключена (coming-soon)</option>
@@ -183,33 +191,30 @@ export default function GamesPage() {
 
             <div className="flex flex-col gap-2">
               <label className="text-xs text-neutral-400">maxHeat</label>
-              <input
+              <Input
                 type="number"
                 min={1}
                 value={form.maxHeat}
                 onChange={(e) => setForm({ ...form, maxHeat: e.target.value })}
                 data-testid="admin-game-maxheat"
-                className="rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-xs text-white outline-none"
               />
             </div>
 
             <div className="flex flex-col gap-2">
               <label className="text-xs text-neutral-400">Название</label>
-              <input
+              <Input
                 value={form.title}
                 onChange={(e) => setForm({ ...form, title: e.target.value })}
                 data-testid="admin-game-title"
-                className="rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-xs text-white outline-none"
               />
             </div>
 
             <div className="flex flex-col gap-2">
               <label className="text-xs text-neutral-400">Тег (короткая подпись)</label>
-              <input
+              <Input
                 value={form.tagline}
                 onChange={(e) => setForm({ ...form, tagline: e.target.value })}
                 data-testid="admin-game-tagline"
-                className="rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-xs text-white outline-none"
               />
             </div>
 
@@ -220,32 +225,33 @@ export default function GamesPage() {
                 onChange={(e) => setForm({ ...form, description: e.target.value })}
                 rows={3}
                 data-testid="admin-game-description"
-                className="rounded-lg border border-white/10 bg-black/20 px-3 py-1.5 text-xs text-white outline-none"
+                className={FORM_CONTROL_CLASS}
               />
             </div>
           </div>
 
           <div className="mt-4 flex gap-2">
-            <button
+            <Button
               onClick={() => selectedId && save.mutate(selectedId)}
               disabled={save.isPending}
               data-testid="admin-game-save"
-              className="rounded-lg bg-gradient-to-r from-fuchsia-500 to-indigo-500 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
+              size="sm"
             >
               {save.isPending ? "…" : "Сохранить"}
-            </button>
+            </Button>
             {overrides[selectedId ?? ""] && (
-              <button
+              <Button
                 onClick={() => selectedId && reset.mutate(selectedId)}
                 disabled={reset.isPending}
                 data-testid="admin-game-reset"
-                className="rounded-lg border border-white/10 px-4 py-2 text-xs text-neutral-300 hover:border-white/30 disabled:opacity-50"
+                variant="secondary"
+                size="sm"
               >
                 {reset.isPending ? "…" : "Сбросить к значениям по умолчанию"}
-              </button>
+              </Button>
             )}
           </div>
-        </div>
+        </Card>
       )}
     </div>
   );
