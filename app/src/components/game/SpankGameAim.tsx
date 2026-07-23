@@ -113,7 +113,11 @@ function loadLifetimeHeat(address: string, gameId: string): number {
   return Number(window.localStorage.getItem(heatLifetimeKey(address, gameId)) ?? "0") || 0;
 }
 
-type Phase = "dialogue-intro" | "intro" | "playing" | "dialogue-outro" | "finale";
+// "choosing" sits between the intro card and the actual round: the timer
+// and zone cycling both stay dormant (see their effects below) until the
+// player picks an implement, so the minute never burns down before they've
+// even decided what to use.
+type Phase = "dialogue-intro" | "intro" | "choosing" | "playing" | "dialogue-outro" | "finale";
 
 export function SpankGameAim({
   address,
@@ -170,6 +174,12 @@ export function SpankGameAim({
   const [lastZoneResult, setLastZoneResult] = useState<"hit" | "preferred" | "miss" | null>(null);
   const zoneHitsRef = useRef(0);
   const zoneTapsRef = useRef(0);
+  // Without the old maxHeat cap, a timed round can rack up far more taps
+  // than a heat-race round ever could — this caps how much of that a single
+  // round can feed into the lifetime/affinity counter, so this pilot's pace
+  // stays in line with the capped ones instead of inflating "Отклик" faster
+  // than everything else.
+  const roundGainedRef = useRef(0);
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [timeLeftMs, setTimeLeftMs] = useState(ROUND_DURATION_MS);
   const finishedRef = useRef(false);
@@ -322,7 +332,10 @@ export function SpankGameAim({
     flashTimerRef.current = setTimeout(() => setLastZoneResult(null), 700);
 
     const gained = selected.heatPerHit * multiplier * noveltyMultiplier;
-    lifetimeRef.current += gained;
+    const affinityRemaining = Math.max(0, game.maxHeat - roundGainedRef.current);
+    const affinityGain = Math.min(gained, affinityRemaining);
+    roundGainedRef.current += affinityGain;
+    lifetimeRef.current += affinityGain;
     window.localStorage.setItem(heatLifetimeKey(address, game.id), String(lifetimeRef.current));
 
     const nextPrecision = zoneHitsRef.current / zoneTapsRef.current;
@@ -334,11 +347,14 @@ export function SpankGameAim({
     }
   }
 
-  function handleNewRound() {
+  // Resets every round-scoped counter and drops into "choosing" — the timer
+  // and zone cycling both wait there (see their effects above) until
+  // confirmImplementAndStart actually kicks the round off.
+  function resetRoundState() {
     stageRef.current = stageForHeat(0);
-    roundStartRef.current = performance.now();
     zoneHitsRef.current = 0;
     zoneTapsRef.current = 0;
+    roundGainedRef.current = 0;
     hitStreakRef.current = 0;
     sameImplementStreakRef.current = 0;
     // Not pre-seeded to the current selection — the first tap of a round
@@ -353,6 +369,21 @@ export function SpankGameAim({
     setLastZoneResult(null);
     setActiveZone(randomZone());
     setPickedOptionId(null);
+  }
+
+  function handleNewRound() {
+    resetRoundState();
+    setPhase("choosing");
+  }
+
+  // The actual moment the minute starts — picking (or confirming) an
+  // implement while "choosing" is what kicks the timer and zone cycling off,
+  // not the "Начать" button itself.
+  function confirmImplementAndStart(implementId: string) {
+    setSelectedId(implementId);
+    if (phase !== "choosing") return;
+    roundStartRef.current = performance.now();
+    setActiveZone(randomZone());
     setPhase("playing");
   }
 
@@ -378,6 +409,15 @@ export function SpankGameAim({
             caption={game.characterLabel}
             pulseKey={pulseKey}
           />
+
+          {phase === "choosing" && (
+            <span
+              className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/20 bg-black/70 px-4 py-2 text-center text-sm font-medium text-white backdrop-blur"
+              data-testid="aim-choose-hint"
+            >
+              Выберите инструмент, чтобы начать
+            </span>
+          )}
 
           {phase === "playing" && (
             <>
@@ -425,7 +465,7 @@ export function SpankGameAim({
                   Она отстранилась — не спешите
                 </span>
               )}
-              {streak >= 2 && (
+              {streak >= 1 && (
                 <span className="pointer-events-none absolute left-3 top-3 rounded-full border border-white/20 bg-black/60 px-3 py-1 text-xs font-medium text-white backdrop-blur">
                   Серия: {streak}
                 </span>
@@ -481,7 +521,7 @@ export function SpankGameAim({
             return (
               <button
                 key={impl.id}
-                onClick={() => !blocked && setSelectedId(impl.id)}
+                onClick={() => !blocked && confirmImplementAndStart(impl.id)}
                 disabled={blocked}
                 data-testid={`implement-${impl.id}`}
                 title={reason ? IMPLEMENT_BLOCK_MESSAGES[reason] : undefined}
@@ -579,12 +619,12 @@ export function SpankGameAim({
             </p>
             <p className="mt-3 text-xs text-neutral-500">
               У вас минута. Она будет смещаться между тремя положениями — бейте туда, где она сейчас, и держите{" "}
-              {Math.round(SUCCESS_PRECISION * 100)}% точности.
+              {Math.round(SUCCESS_PRECISION * 100)}% точности. Минута начнётся, как только выберете инструмент.
             </p>
             <Button
               onClick={() => {
-                roundStartRef.current = performance.now();
-                setPhase("playing");
+                resetRoundState();
+                setPhase("choosing");
               }}
               data-testid="story-start-button"
               size="lg"
