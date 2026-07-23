@@ -265,8 +265,13 @@ export function SpankGameAim({
     if (selected) {
       applyRoundToCharacter(address, game.id, selected.id, 0, "neutral");
     }
-    if (character && traits) {
-      const updated = success ? applyAimSuccessBonus(traits) : applyAimFailPenalty(traits);
+    if (character) {
+      // Re-read rather than reuse the pre-round `traits` state — the
+      // applyRoundToCharacter call above already computed and persisted its
+      // own implement-based relief, and stacking the aim bonus/penalty on
+      // the stale value would silently overwrite that with just this delta.
+      const afterImplement = loadTraits(address, character);
+      const updated = success ? applyAimSuccessBonus(afterImplement) : applyAimFailPenalty(afterImplement);
       saveTraits(address, character.id, updated);
       setTraits(updated);
       setOverrideState(loadOverride(address, character.id));
