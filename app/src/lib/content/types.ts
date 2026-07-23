@@ -37,6 +37,12 @@ export type ChapterRecord = {
   // Absent on order-1 (no fork yet). Present on every order-2/3/4 variant —
   // answering it appends one more character to the player's branch path.
   decision?: ChapterDecision;
+  // Pool of short in-character reaction lines the girl can "say" mid-round —
+  // shown as a fading popup (components/game/CharacterHint.tsx) when the
+  // player tries a blocked implement or crosses into a new heat stage. One
+  // is picked at random (never the same one twice in a row) each time a
+  // trigger fires, so this stays a flavor pool, not a numbered sequence.
+  hints: string[];
 };
 
 // No `id` yet — the store assigns one on create.

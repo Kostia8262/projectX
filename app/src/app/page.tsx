@@ -149,11 +149,13 @@ function AuthenticatedApp({ address }: { address: string }) {
       >
         {view.kind === "characters" ? (
           <div className="flex w-full flex-col gap-8">
-            <SubscriptionStatusBanner onGoToSubscription={() => setView({ kind: "subscription" })} />
             <CharacterSelect
               address={address}
               onSelect={(characterId) => setView({ kind: "character", characterId })}
               onPlayChapter={playChapter}
+              banner={
+                <SubscriptionStatusBanner onGoToSubscription={() => setView({ kind: "subscription" })} />
+              }
             />
           </div>
         ) : view.kind === "character" && activeCharacterPage ? (
@@ -190,6 +192,7 @@ function AuthenticatedApp({ address }: { address: string }) {
               nextTeaser={activeChapter?.nextTeaser}
               decision={activeChapter?.decision}
               decisionIndex={activeChapter ? activeChapter.order - 2 : undefined}
+              hints={activeChapter?.hints}
             />
           ) : (
             <SpankGame
@@ -200,6 +203,7 @@ function AuthenticatedApp({ address }: { address: string }) {
               nextTeaser={activeChapter?.nextTeaser}
               decision={activeChapter?.decision}
               decisionIndex={activeChapter ? activeChapter.order - 2 : undefined}
+              hints={activeChapter?.hints}
             />
           )
         ) : null}

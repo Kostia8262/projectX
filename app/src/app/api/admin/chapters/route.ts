@@ -86,6 +86,21 @@ function parseDecision(raw: unknown): ChapterDecision | null | undefined {
   return { prompt, options: [option0, option1] };
 }
 
+// Every entry must be non-blank — an empty string would render as a blank
+// fade-in popup mid-round (see components/game/CharacterHint.tsx). The array
+// itself may be empty (chapter just has no hints yet); that's the only
+// gap CharacterHint accepts silently (it never triggers).
+function parseHints(raw: unknown): string[] | null {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw)) return null;
+  const hints: string[] = [];
+  for (const value of raw) {
+    if (typeof value !== "string" || !value.trim()) return null;
+    hints.push(value);
+  }
+  return hints;
+}
+
 function parseChapterInput(body: unknown): ChapterInput | null {
   if (typeof body !== "object" || body === null) return null;
   const r = body as Record<string, unknown>;
@@ -103,6 +118,8 @@ function parseChapterInput(body: unknown): ChapterInput | null {
   if (branchPath === null) return null;
   const decision = parseDecision(r.decision);
   if (decision === null) return null;
+  const hints = parseHints(r.hints);
+  if (hints === null) return null;
 
   return {
     characterId: r.characterId,
@@ -113,6 +130,7 @@ function parseChapterInput(body: unknown): ChapterInput | null {
     nextTeaser: r.nextTeaser,
     story,
     branchPath,
+    hints,
     ...(decision !== undefined ? { decision } : {}),
   };
 }

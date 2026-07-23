@@ -14,6 +14,7 @@ import { STORIES, resolveStoryVariant, type GameStory, type StoryBeat } from "@/
 import { playTapSound, playReactionSound, playFinaleSound } from "@/lib/sound";
 import { CharacterStage } from "@/components/game/CharacterStage";
 import { OverrideControls } from "@/components/game/OverrideControls";
+import { useCharacterHint, CharacterHintToast } from "@/components/game/CharacterHint";
 import { PageTitle, SectionHeading, Eyebrow } from "@/components/ui/Heading";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -65,6 +66,7 @@ export function SpankGameRate({
   nextTeaser,
   decision,
   decisionIndex,
+  hints,
 }: {
   address: string;
   game: GameDefinition;
@@ -73,6 +75,7 @@ export function SpankGameRate({
   nextTeaser?: string;
   decision?: ChapterDecision;
   decisionIndex?: number;
+  hints?: string[];
 }) {
   const { energy, max, spend } = useEnergyContext();
   const energyRefill = useEnergyRefill();
@@ -107,6 +110,7 @@ export function SpankGameRate({
   // storyOverride lets "chapter mode" (see chapters.ts) reuse this same
   // mechanic with a different narrative than the pilot's own default story.
   const story = storyOverride ?? STORIES[game.id];
+  const { text: hintText, visible: hintVisible, trigger: triggerHint } = useCharacterHint(hints ?? []);
 
   const heatStage = stageForHeat((heat / game.maxHeat) * 100);
   const paceStage = paceForRate(rate);
@@ -127,7 +131,10 @@ export function SpankGameRate({
 
   function handleTap() {
     if (!selected || outOfEnergy || phase !== "playing") return;
-    if (traits && character && implementBlockReason(traits, character, selected, overriding)) return;
+    if (traits && character && implementBlockReason(traits, character, selected, overriding)) {
+      triggerHint();
+      return;
+    }
 
     const now = performance.now();
     if (lastTapRef.current !== null) {
@@ -161,6 +168,7 @@ export function SpankGameRate({
     if (nextStage.label !== stageRef.current.label) {
       stageRef.current = nextStage;
       playReactionSound();
+      triggerHint();
     }
 
     if (next >= game.maxHeat) {
@@ -202,6 +210,7 @@ export function SpankGameRate({
 
   return (
     <div className="relative flex w-full min-h-0 flex-1 flex-col lg:flex-row">
+      <CharacterHintToast text={hintText} visible={hintVisible} />
       <div className="flex flex-1 flex-col gap-4 p-4 lg:p-8">
         <div>
           <Eyebrow>{game.tagline}</Eyebrow>

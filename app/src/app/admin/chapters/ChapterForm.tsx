@@ -42,6 +42,7 @@ type FormState = {
   decisionEnabled: boolean;
   decisionPrompt: StoryBeat;
   decisionOptions: [DecisionOptionForm, DecisionOptionForm];
+  hints: string[];
 };
 
 function emptyBeat(): StoryBeat {
@@ -93,6 +94,7 @@ function formFor(chapter: ChapterRecord): FormState {
           { label: chapter.decision.options[1].label, result: chapter.decision.options[1].result },
         ]
       : emptyDecisionOptions(),
+    hints: [...chapter.hints],
   };
 }
 
@@ -115,6 +117,7 @@ function blankForm(): FormState {
     decisionEnabled: false,
     decisionPrompt: emptyBeat(),
     decisionOptions: emptyDecisionOptions(),
+    hints: [],
   };
 }
 
@@ -219,6 +222,7 @@ export function ChapterForm({
       nextTeaser: f.nextTeaser,
       story: buildStory(f),
       branchPath: f.branchPath,
+      hints: f.hints.filter((h) => h.trim()),
       decision: f.decisionEnabled
         ? {
             prompt: f.decisionPrompt,
@@ -516,6 +520,51 @@ export function ChapterForm({
             <p className="text-xs text-neutral-500">
               Нет вариантов — всегда будет показана «Развязка по умолчанию».
             </p>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-4 border-t border-white/10 pt-4">
+        <div className="mb-2 flex items-center justify-between">
+          <SectionHeading dense>Подсказки-реакции (всплывающие на пару секунд)</SectionHeading>
+          <Button
+            onClick={() => setForm({ ...form, hints: [...form.hints, ""] })}
+            variant="secondary"
+            size="sm"
+            data-testid="admin-chapter-add-hint"
+          >
+            Добавить реплику
+          </Button>
+        </div>
+        <p className="mb-2 text-xs text-neutral-500">
+          Короткие фразы от лица персонажа — показываются игроку случайной всплывающей подсказкой,
+          когда он пробует заблокированное орудие или когда сцена переходит на новую стадию.
+        </p>
+        <div className="flex flex-col gap-2">
+          {form.hints.map((hint, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <Input
+                value={hint}
+                onChange={(e) => {
+                  const next = [...form.hints];
+                  next[i] = e.target.value;
+                  setForm({ ...form, hints: next });
+                }}
+                data-testid={`admin-chapter-hint-${i}`}
+                className="flex-1"
+              />
+              <button
+                type="button"
+                onClick={() => setForm({ ...form, hints: form.hints.filter((_, idx) => idx !== i) })}
+                data-testid={`admin-chapter-remove-hint-${i}`}
+                className="text-xs text-rose-400 hover:text-rose-300"
+              >
+                Убрать
+              </button>
+            </div>
+          ))}
+          {form.hints.length === 0 && (
+            <p className="text-xs text-neutral-500">Пока нет реплик для этой главы.</p>
           )}
         </div>
       </div>
