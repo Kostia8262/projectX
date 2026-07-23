@@ -375,6 +375,22 @@ export function applyAftercareDebuff(state: TraitState, escalation: number = 1):
   };
 }
 
+// Fired by the "sequence" mechanic (games/registry.ts, SpankGameSequence.tsx,
+// Рин's pilot-e) when the player breaks the exact implement order she asked
+// for once at round start — much lighter than AFTERCARE_DEBUFF above since
+// this is a frequent, immediately-retriable slip, not a rare pass expiring.
+const FORGOTTEN_REQUEST_PENALTY = { boredom: 10, defiance: 8, affection: -5 };
+
+export function applyForgottenRequestPenalty(state: TraitState): TraitState {
+  return {
+    ...state,
+    boredom: clamp(state.boredom + FORGOTTEN_REQUEST_PENALTY.boredom),
+    defiance: clamp(state.defiance + FORGOTTEN_REQUEST_PENALTY.defiance),
+    affection: clamp(state.affection + FORGOTTEN_REQUEST_PENALTY.affection),
+    lastActiveAt: Date.now(),
+  };
+}
+
 export function applyAftercareRelief(state: TraitState): TraitState {
   return {
     ...state,

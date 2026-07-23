@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useEnergyContext } from "@/contexts/EnergyContext";
 import { useEnergyRefill } from "@/hooks/useEnergyRefill";
 import { HEAT_STAGES, implementsFor, stageForHeat, type GameDefinition } from "@/lib/games/registry";
@@ -72,6 +72,19 @@ export function SpankGame({
   const energyRefill = useEnergyRefill();
   const [heat, setHeat] = useState(0);
   const [phase, setPhase] = useState<Phase>(() => (introDialogue ? "dialogue-intro" : "intro"));
+  // Guards against a race on cold/refreshed loads: `page.tsx` only waits on
+  // `activeGame` before mounting this component, not on the separate
+  // `["chapters"]` query `introDialogue` comes from — so on first paint
+  // `introDialogue` can still be undefined, locking the lazy initializer
+  // above onto "intro" even though a dialogue scene should show once the
+  // chapter data actually arrives a moment later.
+  const dialogueIntroCaughtUpRef = useRef(false);
+  useEffect(() => {
+    if (introDialogue && phase === "intro" && !dialogueIntroCaughtUpRef.current) {
+      dialogueIntroCaughtUpRef.current = true;
+      setPhase("dialogue-intro");
+    }
+  }, [introDialogue, phase]);
   const [finaleBeat, setFinaleBeat] = useState<StoryBeat | null>(null);
   const [pickedOptionId, setPickedOptionId] = useState<string | null>(null);
   const implements_ = implementsFor(game);
@@ -326,7 +339,19 @@ export function SpankGame({
             <p className="mt-3 text-sm leading-relaxed text-neutral-200" data-testid="story-intro">
               {story.intro.text}
             </p>
-            <Button onClick={() => setPhase("playing")} data-testid="story-start-button" size="lg" className="mt-5">
+            <Button
+              onClick={() => {
+                // Reset here, not just in handleNewRound — otherwise time
+                // spent reading this screen (or an introDialogue scene
+                // before it) would count toward the round's duration and
+                // throw off the fast/slow classification in stories.ts.
+                roundStartRef.current = performance.now();
+                setPhase("playing");
+              }}
+              data-testid="story-start-button"
+              size="lg"
+              className="mt-5"
+            >
               Начать
             </Button>
           </Card>

@@ -3,13 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useEnergyContext } from "@/contexts/EnergyContext";
 import { useEnergyRefill } from "@/hooks/useEnergyRefill";
-import {
-  HEAT_STAGES,
-  implementsFor,
-  stageForHeat,
-  paceForRate,
-  type GameDefinition,
-} from "@/lib/games/registry";
+import { HEAT_STAGES, implementsFor, stageForHeat, type GameDefinition } from "@/lib/games/registry";
 import { spankButtonBackground } from "@/lib/games/style";
 import { STORIES, resolveStoryVariant, type GameStory, type StoryBeat } from "@/lib/games/stories";
 import { classifySessionQuality, type TapOutcome } from "@/lib/games/sessionQuality";
@@ -47,54 +41,24 @@ function loadLifetimeHeat(address: string, gameId: string): number {
   return Number(window.localStorage.getItem(heatLifetimeKey(address, gameId)) ?? "0") || 0;
 }
 
-// Rate-based variant: cost and reward per tap both scale with how fast the
-// player is currently tapping (smoothed taps/sec), instead of a flat cost.
-// Going fast yields more heat per tap AND per second, but energy drains
-// faster than the heat bonus grows — so speed is a real trade-off (burn
-// through the energy pool quickly for a punchier scene) rather than a
-// free win, and a separate "pace" reaction tracks the character's response
-// to the current speed, independent from cumulative heat.
-const BASE_ENERGY_COST = 1;
-const ENERGY_RATE_FACTOR = 0.6;
-const MAX_ENERGY_COST = 5;
-const HEAT_RATE_FACTOR = 0.18;
-const RATE_SMOOTHING = 0.35;
-const RATE_DECAY_PER_TICK = 0.4;
-const RATE_DECAY_INTERVAL_MS = 200;
+// A marker sweeps 0→1→0 (triangle wave) across the bar on a fixed cycle; the
+// highlighted band in the middle is the "good" window. Tapping while the
+// marker sits inside it is a real bonus over a flat tap — tapping outside it
+// still lands completely normally (no penalty), since a quick-round pilot
+// should punish missing rhythm far more gently than the memory/aim ones.
+const RHYTHM_CYCLE_MS = 1100;
+const SWEET_MIN = 0.4;
+const SWEET_MAX = 0.6;
+const RHYTHM_HIT_MULTIPLIER = 1.5;
 
-// She wants a specific pace, not just "as fast as possible" — a target band
-// on the same 0-6 rate scale as the pace bar below, drifting to a new spot
-// every PACE_BAND_SHIFT_MS. Tapping while inside it is a real bonus over a
-// flat-fast approach; tapping outside it is never penalized beyond the
-// mechanic's own existing speed/energy trade-off — this is meant to reward
-// matching her, not punish missing her.
-const PACE_BAND_WIDTH = 1.2;
-const PACE_BAND_MIN_CENTER = 1;
-const PACE_BAND_MAX_CENTER = 5.5;
-const PACE_BAND_SHIFT_MS = 6000;
-const PACE_BAND_HEAT_BONUS = 1.25;
-const PACE_BAND_ENERGY_DISCOUNT = 1;
-// Same denominator the pace bar below already normalizes `rate` against.
-const PACE_SCALE_MAX = 6;
-
-type PaceBand = { min: number; max: number; center: number };
-
-function randomPaceBand(previousCenter?: number): PaceBand {
-  let center = PACE_BAND_MIN_CENTER + Math.random() * (PACE_BAND_MAX_CENTER - PACE_BAND_MIN_CENTER);
-  if (previousCenter !== undefined) {
-    let attempts = 0;
-    while (Math.abs(center - previousCenter) < 0.8 && attempts < 10) {
-      center = PACE_BAND_MIN_CENTER + Math.random() * (PACE_BAND_MAX_CENTER - PACE_BAND_MIN_CENTER);
-      attempts += 1;
-    }
-  }
-  const half = PACE_BAND_WIDTH / 2;
-  return { min: Math.max(0, center - half), max: Math.min(PACE_SCALE_MAX, center + half), center };
+function trianglePhase(elapsedMs: number, cycleMs: number): number {
+  const t = (elapsedMs % cycleMs) / cycleMs; // 0..1 sawtooth
+  return t < 0.5 ? t * 2 : (1 - t) * 2; // 0 -> 1 -> 0
 }
 
 type Phase = "dialogue-intro" | "intro" | "playing" | "dialogue-outro" | "finale";
 
-export function SpankGameRate({
+export function SpankGameRhythm({
   address,
   game,
   titleOverride,
@@ -123,18 +87,8 @@ export function SpankGameRate({
   const energyRefill = useEnergyRefill();
   const [heat, setHeat] = useState(0);
   const [phase, setPhase] = useState<Phase>(() => (introDialogue ? "dialogue-intro" : "intro"));
-  // Guards against a race on cold/refreshed loads — see the matching
-  // comment in SpankGame.tsx.
-  const dialogueIntroCaughtUpRef = useRef(false);
-  useEffect(() => {
-    if (introDialogue && phase === "intro" && !dialogueIntroCaughtUpRef.current) {
-      dialogueIntroCaughtUpRef.current = true;
-      setPhase("dialogue-intro");
-    }
-  }, [introDialogue, phase]);
   const [finaleBeat, setFinaleBeat] = useState<StoryBeat | null>(null);
   const [pickedOptionId, setPickedOptionId] = useState<string | null>(null);
-  const [rate, setRate] = useState(0);
   const implements_ = implementsFor(game);
   const character = getCharacterForGame(game.id);
   const [traits, setTraits] = useState<TraitState | null>(
@@ -150,58 +104,43 @@ export function SpankGameRate({
   const [selectedId, setSelectedId] = useState(implements_[0]?.id);
   const selected = implements_.find((i) => i.id === selectedId) ?? implements_[0];
   const lifetimeRef = useRef(loadLifetimeHeat(address, game.id));
-  const rateRef = useRef(0);
-  const lastTapRef = useRef<number | null>(null);
   const stageRef = useRef(stageForHeat(0));
   const roundStartRef = useRef(performance.now());
-  const paceSumRef = useRef(0);
-  const paceSamplesRef = useRef(0);
   const heatRef = useRef(0);
-  // Per-tap history for THIS round only — feeds classifySessionQuality at
-  // finale time (games/sessionQuality.ts). Reset in handleNewRound.
   const tapLogRef = useRef<TapOutcome[]>([]);
   const [pulseKey, setPulseKey] = useState(0);
-  // storyOverride lets "chapter mode" (see chapters.ts) reuse this same
-  // mechanic with a different narrative than the pilot's own default story.
   const story = storyOverride ?? STORIES[game.id];
   const { text: hintText, visible: hintVisible, triggerStage, triggerBlocked } = useCharacterHint(hints);
 
-  const [band, setBand] = useState<PaceBand>(() => randomPaceBand());
-  const [inBandFlash, setInBandFlash] = useState(false);
-  const inBandFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rhythmStartRef = useRef(performance.now());
+  const phaseValueRef = useRef(0);
+  const [markerPercent, setMarkerPercent] = useState(0);
+  const [lastHitResult, setLastHitResult] = useState<"hit" | "miss" | null>(null);
+  const hitCountRef = useRef(0);
+  const tapCountRef = useRef(0);
+  const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const heatStage = stageForHeat((heat / game.maxHeat) * 100);
-  const paceStage = paceForRate(rate);
-  const outOfEnergy = energy <= 0;
-
-  // Drifts to a new spot on its own clock, independent of taps — matching
-  // her pace has to stay an active read of the bar, not a one-time lock-in.
   useEffect(() => {
     if (phase !== "playing") return;
-    const id = setInterval(() => {
-      setBand((current) => randomPaceBand(current.center));
-    }, PACE_BAND_SHIFT_MS);
-    return () => clearInterval(id);
+    let raf: number;
+    function tick() {
+      const value = trianglePhase(performance.now() - rhythmStartRef.current, RHYTHM_CYCLE_MS);
+      phaseValueRef.current = value;
+      setMarkerPercent(value * 100);
+      raf = requestAnimationFrame(tick);
+    }
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
   }, [phase]);
 
   useEffect(() => {
     return () => {
-      if (inBandFlashTimerRef.current) clearTimeout(inBandFlashTimerRef.current);
+      if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
     };
   }, []);
 
-  // decay the displayed pace back down when the player pauses, so "pace"
-  // genuinely reflects current speed, not a monotonic peak
-  useEffect(() => {
-    const id = setInterval(() => {
-      const idleSeconds = lastTapRef.current === null ? 999 : (performance.now() - lastTapRef.current) / 1000;
-      if (idleSeconds > 0.4 && rateRef.current > 0) {
-        rateRef.current = Math.max(0, rateRef.current - RATE_DECAY_PER_TICK);
-        setRate(rateRef.current);
-      }
-    }, RATE_DECAY_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, []);
+  const stage = stageForHeat((heat / game.maxHeat) * 100);
+  const outOfEnergy = energy <= 0;
 
   function handleTap() {
     if (!selected || outOfEnergy || phase !== "playing") return;
@@ -210,53 +149,31 @@ export function SpankGameRate({
       triggerBlocked();
       return;
     }
-
-    const now = performance.now();
-    if (lastTapRef.current !== null) {
-      const deltaSeconds = (now - lastTapRef.current) / 1000;
-      const instantRate = deltaSeconds > 0 ? Math.min(10, 1 / deltaSeconds) : 10;
-      rateRef.current = rateRef.current * (1 - RATE_SMOOTHING) + instantRate * RATE_SMOOTHING;
-    }
-    lastTapRef.current = now;
-    setRate(rateRef.current);
-    paceSumRef.current += rateRef.current;
-    paceSamplesRef.current += 1;
-
-    const inBand = rateRef.current >= band.min && rateRef.current <= band.max;
-
-    const energyCost = Math.min(
-      MAX_ENERGY_COST,
-      Math.max(
-        1,
-        Math.round(BASE_ENERGY_COST + rateRef.current * ENERGY_RATE_FACTOR) -
-          (inBand ? PACE_BAND_ENERGY_DISCOUNT : 0)
-      )
-    );
-    if (!spend(energyCost)) return;
+    if (!spend(1)) return;
     playTapSound();
     setPulseKey((k) => k + 1);
-
-    if (inBand) {
-      setInBandFlash(true);
-      if (inBandFlashTimerRef.current) clearTimeout(inBandFlashTimerRef.current);
-      inBandFlashTimerRef.current = setTimeout(() => setInBandFlash(false), 500);
-    }
 
     tapLogRef.current.push({
       implementId: selected.id,
       blocked: false,
-      matched: character ? matchesTolerance(character, classifyIntensity(selected, rateRef.current)) : true,
+      matched: character ? matchesTolerance(character, classifyIntensity(selected, 0)) : true,
       resonant: character ? character.preferredImplementIds.includes(selected.id) : false,
     });
 
-    const gained = selected.heatPerHit * (1 + rateRef.current * HEAT_RATE_FACTOR) * (inBand ? PACE_BAND_HEAT_BONUS : 1);
-    // heatRef, not the `heat` state closure, is the source of truth — same
-    // rapid-tap race the energy pool already hit once (see EnergyContext).
+    const value = phaseValueRef.current;
+    const isHit = value >= SWEET_MIN && value <= SWEET_MAX;
+    tapCountRef.current += 1;
+    if (isHit) hitCountRef.current += 1;
+    setLastHitResult(isHit ? "hit" : "miss");
+    if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+    flashTimerRef.current = setTimeout(() => setLastHitResult(null), 500);
+
+    const gained = selected.heatPerHit * (isHit ? RHYTHM_HIT_MULTIPLIER : 1);
     const next = Math.min(game.maxHeat, heatRef.current + gained);
     heatRef.current = next;
     setHeat(next);
     lifetimeRef.current += gained;
-    window.localStorage.setItem(heatLifetimeKey(address, game.id), String(Math.floor(lifetimeRef.current)));
+    window.localStorage.setItem(heatLifetimeKey(address, game.id), String(lifetimeRef.current));
 
     const nextStage = stageForHeat((next / game.maxHeat) * 100);
     if (nextStage.label !== stageRef.current.label) {
@@ -266,22 +183,19 @@ export function SpankGameRate({
     }
 
     if (next >= game.maxHeat) {
-      const durationMs = now - roundStartRef.current;
-      const averagePace = paceSamplesRef.current > 0 ? paceSumRef.current / paceSamplesRef.current : 0;
+      const durationMs = performance.now() - roundStartRef.current;
       const sessionQuality = classifySessionQuality(tapLogRef.current, implements_.length);
-      // Mood is her disposition GOING IN to this round — see the matching
-      // comment in SpankGame.tsx's finale block.
       const mood = traits ? moodTag(traits) : undefined;
       setFinaleBeat(
         resolveStoryVariant(
           story,
           game.id,
-          { durationMs, implementId: selected.id, averagePace },
+          { durationMs, implementId: selected.id, averagePace: 0 },
           mood,
           sessionQuality
         )
       );
-      applyRoundToCharacter(address, game.id, selected.id, averagePace, sessionQuality);
+      applyRoundToCharacter(address, game.id, selected.id, 0, sessionQuality);
       if (character) {
         setTraits(loadTraits(address, character));
         setOverrideState(loadOverride(address, character.id));
@@ -297,19 +211,17 @@ export function SpankGameRate({
     setHeat(0);
     stageRef.current = stageForHeat(0);
     roundStartRef.current = performance.now();
-    paceSumRef.current = 0;
-    paceSamplesRef.current = 0;
-    rateRef.current = 0;
-    setRate(0);
-    lastTapRef.current = null;
+    rhythmStartRef.current = performance.now();
     tapLogRef.current = [];
-    setBand(randomPaceBand());
-    setInBandFlash(false);
+    hitCountRef.current = 0;
+    tapCountRef.current = 0;
+    setLastHitResult(null);
     setPickedOptionId(null);
     setPhase("playing");
   }
 
   const heatPercent = (heat / game.maxHeat) * 100;
+  const precision = tapCountRef.current > 0 ? Math.round((hitCountRef.current / tapCountRef.current) * 100) : null;
 
   return (
     <div className="relative flex w-full min-h-0 flex-1 flex-col lg:flex-row">
@@ -323,8 +235,8 @@ export function SpankGameRate({
         </div>
 
         <CharacterStage
-          color={heatStage.color}
-          label={phase === "finale" ? "Кульминация" : heatStage.label}
+          color={stage.color}
+          label={phase === "finale" ? "Кульминация" : stage.label}
           caption={game.characterLabel}
           pulseKey={pulseKey}
         />
@@ -333,44 +245,39 @@ export function SpankGameRate({
           <div className="h-3 w-full overflow-hidden rounded-full bg-white/10">
             <div
               className="h-full rounded-full transition-all duration-200"
-              style={{ width: `${heatPercent}%`, backgroundColor: heatStage.color }}
+              style={{ width: `${heatPercent}%`, backgroundColor: stage.color }}
             />
           </div>
-          <p className="mt-1 text-xs text-neutral-500">
-            {Math.round(heat)} / {game.maxHeat}
-          </p>
+          <div className="mt-1 flex items-center justify-between">
+            <p className="text-xs text-neutral-500">
+              {Math.round(heat)} / {game.maxHeat}
+            </p>
+            {precision !== null && (
+              <p className="text-xs text-neutral-500" data-testid="rhythm-precision">
+                Точность: {precision}%
+              </p>
+            )}
+          </div>
 
           <div className="mt-3 border-t border-white/10 pt-3">
-            <div className="flex items-center justify-between">
-              <p className="text-xs text-neutral-400">Темп</p>
-              {phase !== "finale" && (
-                <p className="text-xs text-neutral-500" data-testid="pace-band-hint">
-                  Её темп сейчас здесь
-                </p>
-              )}
-            </div>
-            <p className="text-sm font-semibold text-indigo-300" data-testid="pace-label">
-              {phase === "finale" ? "—" : paceStage.label}
-            </p>
-            <div className="relative mt-1 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-              {phase !== "finale" && (
-                <div
-                  className="absolute inset-y-0 rounded-full bg-emerald-400/25"
-                  data-testid="pace-band"
-                  style={{
-                    left: `${(band.min / PACE_SCALE_MAX) * 100}%`,
-                    width: `${((band.max - band.min) / PACE_SCALE_MAX) * 100}%`,
-                  }}
-                />
-              )}
+            <p className="mb-1.5 text-xs text-neutral-400">Момент</p>
+            <div className="relative h-3 w-full overflow-hidden rounded-full bg-white/10">
               <div
-                className="relative h-full rounded-full bg-indigo-400 transition-all duration-150"
-                style={{ width: `${Math.min(100, (rate / 6) * 100)}%` }}
+                className="absolute inset-y-0 rounded-full bg-emerald-400/25"
+                style={{ left: `${SWEET_MIN * 100}%`, width: `${(SWEET_MAX - SWEET_MIN) * 100}%` }}
+              />
+              <div
+                className="absolute inset-y-0 w-1 rounded-full bg-white shadow-[0_0_6px_2px_rgba(255,255,255,0.6)]"
+                style={{ left: `calc(${markerPercent}% - 2px)` }}
+                data-testid="rhythm-marker"
               />
             </div>
-            {inBandFlash && (
-              <p className="mt-1 text-xs font-medium text-emerald-400" data-testid="pace-band-feedback">
-                В её темпе!
+            {lastHitResult && (
+              <p
+                className={`mt-1.5 text-xs font-medium ${lastHitResult === "hit" ? "text-emerald-400" : "text-neutral-500"}`}
+                data-testid="rhythm-feedback"
+              >
+                {lastHitResult === "hit" ? "Точно в момент!" : "Мимо…"}
               </p>
             )}
           </div>
@@ -492,13 +399,13 @@ export function SpankGameRate({
             <p className="mt-3 text-sm leading-relaxed text-neutral-200" data-testid="story-intro">
               {story.intro.text}
             </p>
+            <p className="mt-3 text-xs text-neutral-500">
+              Бейте точно в подсвеченный момент на шкале — так эффект куда сильнее.
+            </p>
             <Button
               onClick={() => {
-                // Reset here, not just in handleNewRound — otherwise time
-                // spent reading this screen (or an introDialogue scene
-                // before it) would count toward the round's duration and
-                // throw off the fast/slow classification in stories.ts.
                 roundStartRef.current = performance.now();
+                rhythmStartRef.current = performance.now();
                 setPhase("playing");
               }}
               data-testid="story-start-button"
@@ -526,6 +433,9 @@ export function SpankGameRate({
             <p className="mt-3 text-sm leading-relaxed text-neutral-200" data-testid="story-finale">
               {finaleBeat?.text}
             </p>
+            {precision !== null && (
+              <p className="mt-2 text-xs text-neutral-500">Точность за раунд: {precision}%</p>
+            )}
             {nextTeaser && (
               <p
                 className="mt-4 border-t border-white/10 pt-4 text-sm italic leading-relaxed text-indigo-200"

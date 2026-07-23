@@ -8,6 +8,9 @@ import { EnergyProvider } from "@/contexts/EnergyContext";
 import { Cabinet } from "@/components/Cabinet";
 import { SpankGame } from "@/components/game/SpankGame";
 import { SpankGameRate } from "@/components/game/SpankGameRate";
+import { SpankGameAim } from "@/components/game/SpankGameAim";
+import { SpankGameRhythm } from "@/components/game/SpankGameRhythm";
+import { SpankGameSequence } from "@/components/game/SpankGameSequence";
 import { CharacterSelect } from "@/components/character/CharacterSelect";
 import { CharacterPage } from "@/components/character/CharacterPage";
 import { CharacterHistoryPage } from "@/components/character/CharacterHistoryPage";
@@ -211,39 +214,35 @@ function AuthenticatedApp({ address }: { address: string }) {
         ) : view.kind === "subscription" ? (
           <SubscriptionTiers />
         ) : view.kind === "game" && activeGame ? (
-          activeGame.mechanic === "rate" ? (
-            <SpankGameRate
-              address={address}
-              game={activeGame}
-              titleOverride={activeChapter?.chapterTitle}
-              storyOverride={activeChapter?.story}
-              nextTeaser={activeChapter?.nextTeaser}
-              decision={activeChapter?.decision}
-              decisionIndex={activeChapter ? activeChapter.order - 2 : undefined}
-              hints={activeChapter?.hints}
-              introDialogue={activeChapter?.introDialogue}
-              outroDialogue={activeChapter?.outroDialogue}
-              onFinishChapter={
-                view.characterId ? () => setView({ kind: "character", characterId: view.characterId! }) : undefined
-              }
-            />
-          ) : (
-            <SpankGame
-              address={address}
-              game={activeGame}
-              titleOverride={activeChapter?.chapterTitle}
-              storyOverride={activeChapter?.story}
-              nextTeaser={activeChapter?.nextTeaser}
-              decision={activeChapter?.decision}
-              decisionIndex={activeChapter ? activeChapter.order - 2 : undefined}
-              hints={activeChapter?.hints}
-              introDialogue={activeChapter?.introDialogue}
-              outroDialogue={activeChapter?.outroDialogue}
-              onFinishChapter={
-                view.characterId ? () => setView({ kind: "character", characterId: view.characterId! }) : undefined
-              }
-            />
-          )
+          (() => {
+            const sharedProps = {
+              address,
+              game: activeGame,
+              titleOverride: activeChapter?.chapterTitle,
+              storyOverride: activeChapter?.story,
+              nextTeaser: activeChapter?.nextTeaser,
+              decision: activeChapter?.decision,
+              decisionIndex: activeChapter ? activeChapter.order - 2 : undefined,
+              hints: activeChapter?.hints,
+              introDialogue: activeChapter?.introDialogue,
+              outroDialogue: activeChapter?.outroDialogue,
+              onFinishChapter: view.characterId
+                ? () => setView({ kind: "character", characterId: view.characterId! })
+                : undefined,
+            };
+            switch (activeGame.mechanic) {
+              case "rate":
+                return <SpankGameRate {...sharedProps} />;
+              case "aim":
+                return <SpankGameAim {...sharedProps} />;
+              case "rhythm":
+                return <SpankGameRhythm {...sharedProps} />;
+              case "sequence":
+                return <SpankGameSequence {...sharedProps} />;
+              default:
+                return <SpankGame {...sharedProps} />;
+            }
+          })()
         ) : null}
       </main>
     </div>

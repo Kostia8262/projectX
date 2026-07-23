@@ -39,7 +39,13 @@ export function DialogueScene({
   }
 
   return (
-    <div className="absolute inset-0 z-40 flex flex-col justify-end overflow-hidden">
+    // `fixed`, not `absolute` — the underlying game screen can be taller
+    // than the viewport on narrow widths (SpankGame's two columns stack
+    // below `lg`), and `main` doesn't scroll during a round. An `absolute`
+    // overlay would inherit that oversized height and push this
+    // bottom-anchored text off-screen with no way to reach it; `fixed`
+    // always matches the actual viewport instead.
+    <div className="fixed inset-0 z-40 flex flex-col justify-end overflow-hidden">
       <div className="absolute inset-0">
         {node.image ? (
           // eslint-disable-next-line @next/next/no-img-element

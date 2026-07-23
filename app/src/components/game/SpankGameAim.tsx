@@ -3,14 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useEnergyContext } from "@/contexts/EnergyContext";
 import { useEnergyRefill } from "@/hooks/useEnergyRefill";
-import {
-  HEAT_STAGES,
-  implementsFor,
-  stageForHeat,
-  paceForRate,
-  type GameDefinition,
-} from "@/lib/games/registry";
-import { spankButtonBackground } from "@/lib/games/style";
+import { HEAT_STAGES, implementsFor, stageForHeat, type GameDefinition } from "@/lib/games/registry";
 import { STORIES, resolveStoryVariant, type GameStory, type StoryBeat } from "@/lib/games/stories";
 import { classifySessionQuality, type TapOutcome } from "@/lib/games/sessionQuality";
 import { playTapSound, playReactionSound, playFinaleSound } from "@/lib/sound";
@@ -47,54 +40,34 @@ function loadLifetimeHeat(address: string, gameId: string): number {
   return Number(window.localStorage.getItem(heatLifetimeKey(address, gameId)) ?? "0") || 0;
 }
 
-// Rate-based variant: cost and reward per tap both scale with how fast the
-// player is currently tapping (smoothed taps/sec), instead of a flat cost.
-// Going fast yields more heat per tap AND per second, but energy drains
-// faster than the heat bonus grows — so speed is a real trade-off (burn
-// through the energy pool quickly for a punchier scene) rather than a
-// free win, and a separate "pace" reaction tracks the character's response
-// to the current speed, independent from cumulative heat.
-const BASE_ENERGY_COST = 1;
-const ENERGY_RATE_FACTOR = 0.6;
-const MAX_ENERGY_COST = 5;
-const HEAT_RATE_FACTOR = 0.18;
-const RATE_SMOOTHING = 0.35;
-const RATE_DECAY_PER_TICK = 0.4;
-const RATE_DECAY_INTERVAL_MS = 200;
+// She shifts between these three positions on her own timer — landing a hit
+// on whichever one she's CURRENTLY in is the whole game; the other two are
+// still clickable (so a wrong guess costs a real, immediate tap), just far
+// less effective. Plain labelled buttons for now — see the ZoneButton style
+// below for where real art/animation would replace the placeholder.
+type ZoneId = "left" | "center" | "right";
+const ZONES: { id: ZoneId; label: string }[] = [
+  { id: "left", label: "Левее" },
+  { id: "center", label: "Центр" },
+  { id: "right", label: "Правее" },
+];
 
-// She wants a specific pace, not just "as fast as possible" — a target band
-// on the same 0-6 rate scale as the pace bar below, drifting to a new spot
-// every PACE_BAND_SHIFT_MS. Tapping while inside it is a real bonus over a
-// flat-fast approach; tapping outside it is never penalized beyond the
-// mechanic's own existing speed/energy trade-off — this is meant to reward
-// matching her, not punish missing her.
-const PACE_BAND_WIDTH = 1.2;
-const PACE_BAND_MIN_CENTER = 1;
-const PACE_BAND_MAX_CENTER = 5.5;
-const PACE_BAND_SHIFT_MS = 6000;
-const PACE_BAND_HEAT_BONUS = 1.25;
-const PACE_BAND_ENERGY_DISCOUNT = 1;
-// Same denominator the pace bar below already normalizes `rate` against.
-const PACE_SCALE_MAX = 6;
+const ZONE_SWITCH_MS = 1700;
+// A matched zone is a real bonus over a flat tap, not just "avoid the
+// penalty" — a mismatched one still lands (she doesn't vanish if you guess
+// wrong), just a lot weaker, so guessing wrong stings without ever fully
+// wasting the tap/energy spent on it.
+const ZONE_HIT_MULTIPLIER = 1.15;
+const ZONE_MISS_MULTIPLIER = 0.45;
 
-type PaceBand = { min: number; max: number; center: number };
-
-function randomPaceBand(previousCenter?: number): PaceBand {
-  let center = PACE_BAND_MIN_CENTER + Math.random() * (PACE_BAND_MAX_CENTER - PACE_BAND_MIN_CENTER);
-  if (previousCenter !== undefined) {
-    let attempts = 0;
-    while (Math.abs(center - previousCenter) < 0.8 && attempts < 10) {
-      center = PACE_BAND_MIN_CENTER + Math.random() * (PACE_BAND_MAX_CENTER - PACE_BAND_MIN_CENTER);
-      attempts += 1;
-    }
-  }
-  const half = PACE_BAND_WIDTH / 2;
-  return { min: Math.max(0, center - half), max: Math.min(PACE_SCALE_MAX, center + half), center };
+function randomZone(exclude?: ZoneId): ZoneId {
+  const options = ZONES.map((z) => z.id).filter((id) => id !== exclude);
+  return options[Math.floor(Math.random() * options.length)] ?? ZONES[0].id;
 }
 
 type Phase = "dialogue-intro" | "intro" | "playing" | "dialogue-outro" | "finale";
 
-export function SpankGameRate({
+export function SpankGameAim({
   address,
   game,
   titleOverride,
@@ -123,18 +96,8 @@ export function SpankGameRate({
   const energyRefill = useEnergyRefill();
   const [heat, setHeat] = useState(0);
   const [phase, setPhase] = useState<Phase>(() => (introDialogue ? "dialogue-intro" : "intro"));
-  // Guards against a race on cold/refreshed loads — see the matching
-  // comment in SpankGame.tsx.
-  const dialogueIntroCaughtUpRef = useRef(false);
-  useEffect(() => {
-    if (introDialogue && phase === "intro" && !dialogueIntroCaughtUpRef.current) {
-      dialogueIntroCaughtUpRef.current = true;
-      setPhase("dialogue-intro");
-    }
-  }, [introDialogue, phase]);
   const [finaleBeat, setFinaleBeat] = useState<StoryBeat | null>(null);
   const [pickedOptionId, setPickedOptionId] = useState<string | null>(null);
-  const [rate, setRate] = useState(0);
   const implements_ = implementsFor(game);
   const character = getCharacterForGame(game.id);
   const [traits, setTraits] = useState<TraitState | null>(
@@ -150,138 +113,96 @@ export function SpankGameRate({
   const [selectedId, setSelectedId] = useState(implements_[0]?.id);
   const selected = implements_.find((i) => i.id === selectedId) ?? implements_[0];
   const lifetimeRef = useRef(loadLifetimeHeat(address, game.id));
-  const rateRef = useRef(0);
-  const lastTapRef = useRef<number | null>(null);
   const stageRef = useRef(stageForHeat(0));
   const roundStartRef = useRef(performance.now());
-  const paceSumRef = useRef(0);
-  const paceSamplesRef = useRef(0);
   const heatRef = useRef(0);
-  // Per-tap history for THIS round only — feeds classifySessionQuality at
-  // finale time (games/sessionQuality.ts). Reset in handleNewRound.
   const tapLogRef = useRef<TapOutcome[]>([]);
   const [pulseKey, setPulseKey] = useState(0);
-  // storyOverride lets "chapter mode" (see chapters.ts) reuse this same
-  // mechanic with a different narrative than the pilot's own default story.
   const story = storyOverride ?? STORIES[game.id];
   const { text: hintText, visible: hintVisible, triggerStage, triggerBlocked } = useCharacterHint(hints);
 
-  const [band, setBand] = useState<PaceBand>(() => randomPaceBand());
-  const [inBandFlash, setInBandFlash] = useState(false);
-  const inBandFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [activeZone, setActiveZone] = useState<ZoneId>(() => randomZone());
+  const [lastZoneResult, setLastZoneResult] = useState<"hit" | "miss" | null>(null);
+  const zoneHitsRef = useRef(0);
+  const zoneTapsRef = useRef(0);
+  const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const heatStage = stageForHeat((heat / game.maxHeat) * 100);
-  const paceStage = paceForRate(rate);
-  const outOfEnergy = energy <= 0;
-
-  // Drifts to a new spot on its own clock, independent of taps — matching
-  // her pace has to stay an active read of the bar, not a one-time lock-in.
+  // Only cycles while a round is actually being played — no point drifting
+  // during the intro card or the finale modal.
   useEffect(() => {
     if (phase !== "playing") return;
     const id = setInterval(() => {
-      setBand((current) => randomPaceBand(current.center));
-    }, PACE_BAND_SHIFT_MS);
+      setActiveZone((current) => randomZone(current));
+    }, ZONE_SWITCH_MS);
     return () => clearInterval(id);
   }, [phase]);
 
   useEffect(() => {
     return () => {
-      if (inBandFlashTimerRef.current) clearTimeout(inBandFlashTimerRef.current);
+      if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
     };
   }, []);
 
-  // decay the displayed pace back down when the player pauses, so "pace"
-  // genuinely reflects current speed, not a monotonic peak
-  useEffect(() => {
-    const id = setInterval(() => {
-      const idleSeconds = lastTapRef.current === null ? 999 : (performance.now() - lastTapRef.current) / 1000;
-      if (idleSeconds > 0.4 && rateRef.current > 0) {
-        rateRef.current = Math.max(0, rateRef.current - RATE_DECAY_PER_TICK);
-        setRate(rateRef.current);
-      }
-    }, RATE_DECAY_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, []);
+  const stage = stageForHeat((heat / game.maxHeat) * 100);
+  const outOfEnergy = energy <= 0;
 
-  function handleTap() {
+  function handleZoneTap(zoneId: ZoneId) {
     if (!selected || outOfEnergy || phase !== "playing") return;
     if (traits && character && implementBlockReason(traits, character, selected, overriding)) {
       tapLogRef.current.push({ implementId: selected.id, blocked: true, matched: false, resonant: false });
       triggerBlocked();
       return;
     }
-
-    const now = performance.now();
-    if (lastTapRef.current !== null) {
-      const deltaSeconds = (now - lastTapRef.current) / 1000;
-      const instantRate = deltaSeconds > 0 ? Math.min(10, 1 / deltaSeconds) : 10;
-      rateRef.current = rateRef.current * (1 - RATE_SMOOTHING) + instantRate * RATE_SMOOTHING;
-    }
-    lastTapRef.current = now;
-    setRate(rateRef.current);
-    paceSumRef.current += rateRef.current;
-    paceSamplesRef.current += 1;
-
-    const inBand = rateRef.current >= band.min && rateRef.current <= band.max;
-
-    const energyCost = Math.min(
-      MAX_ENERGY_COST,
-      Math.max(
-        1,
-        Math.round(BASE_ENERGY_COST + rateRef.current * ENERGY_RATE_FACTOR) -
-          (inBand ? PACE_BAND_ENERGY_DISCOUNT : 0)
-      )
-    );
-    if (!spend(energyCost)) return;
+    if (!spend(1)) return;
     playTapSound();
     setPulseKey((k) => k + 1);
-
-    if (inBand) {
-      setInBandFlash(true);
-      if (inBandFlashTimerRef.current) clearTimeout(inBandFlashTimerRef.current);
-      inBandFlashTimerRef.current = setTimeout(() => setInBandFlash(false), 500);
-    }
 
     tapLogRef.current.push({
       implementId: selected.id,
       blocked: false,
-      matched: character ? matchesTolerance(character, classifyIntensity(selected, rateRef.current)) : true,
+      matched: character ? matchesTolerance(character, classifyIntensity(selected, 0)) : true,
       resonant: character ? character.preferredImplementIds.includes(selected.id) : false,
     });
 
-    const gained = selected.heatPerHit * (1 + rateRef.current * HEAT_RATE_FACTOR) * (inBand ? PACE_BAND_HEAT_BONUS : 1);
-    // heatRef, not the `heat` state closure, is the source of truth — same
-    // rapid-tap race the energy pool already hit once (see EnergyContext).
+    const isHit = zoneId === activeZone;
+    zoneTapsRef.current += 1;
+    if (isHit) zoneHitsRef.current += 1;
+    setLastZoneResult(isHit ? "hit" : "miss");
+    if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+    flashTimerRef.current = setTimeout(() => setLastZoneResult(null), 700);
+
+    const gained = selected.heatPerHit * (isHit ? ZONE_HIT_MULTIPLIER : ZONE_MISS_MULTIPLIER);
     const next = Math.min(game.maxHeat, heatRef.current + gained);
     heatRef.current = next;
     setHeat(next);
     lifetimeRef.current += gained;
-    window.localStorage.setItem(heatLifetimeKey(address, game.id), String(Math.floor(lifetimeRef.current)));
+    window.localStorage.setItem(heatLifetimeKey(address, game.id), String(lifetimeRef.current));
 
     const nextStage = stageForHeat((next / game.maxHeat) * 100);
-    if (nextStage.label !== stageRef.current.label) {
+    const stageChanged = nextStage.label !== stageRef.current.label;
+    if (stageChanged) {
       stageRef.current = nextStage;
       playReactionSound();
       triggerStage(HEAT_STAGES.indexOf(nextStage));
+      // A fresh position right after she reacted to a stage change reads as
+      // her shifting BECAUSE of what just landed, not on an arbitrary clock.
+      setActiveZone((current) => randomZone(current));
     }
 
     if (next >= game.maxHeat) {
-      const durationMs = now - roundStartRef.current;
-      const averagePace = paceSamplesRef.current > 0 ? paceSumRef.current / paceSamplesRef.current : 0;
+      const durationMs = performance.now() - roundStartRef.current;
       const sessionQuality = classifySessionQuality(tapLogRef.current, implements_.length);
-      // Mood is her disposition GOING IN to this round — see the matching
-      // comment in SpankGame.tsx's finale block.
       const mood = traits ? moodTag(traits) : undefined;
       setFinaleBeat(
         resolveStoryVariant(
           story,
           game.id,
-          { durationMs, implementId: selected.id, averagePace },
+          { durationMs, implementId: selected.id, averagePace: 0 },
           mood,
           sessionQuality
         )
       );
-      applyRoundToCharacter(address, game.id, selected.id, averagePace, sessionQuality);
+      applyRoundToCharacter(address, game.id, selected.id, 0, sessionQuality);
       if (character) {
         setTraits(loadTraits(address, character));
         setOverrideState(loadOverride(address, character.id));
@@ -297,19 +218,17 @@ export function SpankGameRate({
     setHeat(0);
     stageRef.current = stageForHeat(0);
     roundStartRef.current = performance.now();
-    paceSumRef.current = 0;
-    paceSamplesRef.current = 0;
-    rateRef.current = 0;
-    setRate(0);
-    lastTapRef.current = null;
     tapLogRef.current = [];
-    setBand(randomPaceBand());
-    setInBandFlash(false);
+    zoneHitsRef.current = 0;
+    zoneTapsRef.current = 0;
+    setLastZoneResult(null);
+    setActiveZone(randomZone());
     setPickedOptionId(null);
     setPhase("playing");
   }
 
   const heatPercent = (heat / game.maxHeat) * 100;
+  const precision = zoneTapsRef.current > 0 ? Math.round((zoneHitsRef.current / zoneTapsRef.current) * 100) : null;
 
   return (
     <div className="relative flex w-full min-h-0 flex-1 flex-col lg:flex-row">
@@ -323,8 +242,8 @@ export function SpankGameRate({
         </div>
 
         <CharacterStage
-          color={heatStage.color}
-          label={phase === "finale" ? "Кульминация" : heatStage.label}
+          color={stage.color}
+          label={phase === "finale" ? "Кульминация" : stage.label}
           caption={game.characterLabel}
           pulseKey={pulseKey}
         />
@@ -333,44 +252,16 @@ export function SpankGameRate({
           <div className="h-3 w-full overflow-hidden rounded-full bg-white/10">
             <div
               className="h-full rounded-full transition-all duration-200"
-              style={{ width: `${heatPercent}%`, backgroundColor: heatStage.color }}
+              style={{ width: `${heatPercent}%`, backgroundColor: stage.color }}
             />
           </div>
-          <p className="mt-1 text-xs text-neutral-500">
-            {Math.round(heat)} / {game.maxHeat}
-          </p>
-
-          <div className="mt-3 border-t border-white/10 pt-3">
-            <div className="flex items-center justify-between">
-              <p className="text-xs text-neutral-400">Темп</p>
-              {phase !== "finale" && (
-                <p className="text-xs text-neutral-500" data-testid="pace-band-hint">
-                  Её темп сейчас здесь
-                </p>
-              )}
-            </div>
-            <p className="text-sm font-semibold text-indigo-300" data-testid="pace-label">
-              {phase === "finale" ? "—" : paceStage.label}
+          <div className="mt-1 flex items-center justify-between">
+            <p className="text-xs text-neutral-500">
+              {Math.round(heat)} / {game.maxHeat}
             </p>
-            <div className="relative mt-1 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-              {phase !== "finale" && (
-                <div
-                  className="absolute inset-y-0 rounded-full bg-emerald-400/25"
-                  data-testid="pace-band"
-                  style={{
-                    left: `${(band.min / PACE_SCALE_MAX) * 100}%`,
-                    width: `${((band.max - band.min) / PACE_SCALE_MAX) * 100}%`,
-                  }}
-                />
-              )}
-              <div
-                className="relative h-full rounded-full bg-indigo-400 transition-all duration-150"
-                style={{ width: `${Math.min(100, (rate / 6) * 100)}%` }}
-              />
-            </div>
-            {inBandFlash && (
-              <p className="mt-1 text-xs font-medium text-emerald-400" data-testid="pace-band-feedback">
-                В её темпе!
+            {precision !== null && (
+              <p className="text-xs text-neutral-500" data-testid="aim-precision">
+                Точность: {precision}%
               </p>
             )}
           </div>
@@ -378,15 +269,39 @@ export function SpankGameRate({
       </div>
 
       <div className="flex w-full flex-col gap-4 border-t border-white/10 bg-white/[0.03] p-4 lg:w-80 lg:border-t-0 lg:border-l lg:p-6">
-        <button
-          onClick={handleTap}
-          disabled={outOfEnergy || phase !== "playing"}
-          data-testid="spank-button"
-          className="mx-auto flex h-32 w-32 items-center justify-center rounded-full border border-white/10 text-lg font-semibold text-white shadow-2xl transition active:scale-95 disabled:opacity-40 lg:h-40 lg:w-40"
-          style={{ background: spankButtonBackground(selected?.color) }}
-        >
-          {outOfEnergy ? "Нет энергии" : "Шлёп"}
-        </button>
+        <div className="flex flex-col items-center gap-2">
+          <p className="text-xs text-neutral-500">
+            {phase === "playing" ? "Она сейчас здесь:" : "Цель появится в начале раунда"}
+          </p>
+          <div className="flex w-full gap-2">
+            {ZONES.map((zone) => {
+              const isActive = phase === "playing" && zone.id === activeZone;
+              return (
+                <button
+                  key={zone.id}
+                  onClick={() => handleZoneTap(zone.id)}
+                  disabled={outOfEnergy || phase !== "playing"}
+                  data-testid={`aim-zone-${zone.id}`}
+                  className={`flex-1 rounded-xl border py-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                    isActive
+                      ? "border-fuchsia-400/60 bg-fuchsia-500/15 text-white shadow-[0_0_0_1px_rgba(232,121,249,0.4)]"
+                      : "border-white/10 bg-white/[0.02] text-neutral-400 hover:border-white/20"
+                  }`}
+                >
+                  {zone.label}
+                </button>
+              );
+            })}
+          </div>
+          {lastZoneResult && (
+            <p
+              className={`text-xs font-medium ${lastZoneResult === "hit" ? "text-emerald-400" : "text-neutral-500"}`}
+              data-testid="aim-feedback"
+            >
+              {lastZoneResult === "hit" ? "Точно!" : "Мимо…"}
+            </p>
+          )}
+        </div>
 
         <div className="flex flex-wrap items-center justify-center gap-2">
           {implements_.map((impl) => {
@@ -492,12 +407,11 @@ export function SpankGameRate({
             <p className="mt-3 text-sm leading-relaxed text-neutral-200" data-testid="story-intro">
               {story.intro.text}
             </p>
+            <p className="mt-3 text-xs text-neutral-500">
+              Она будет смещаться между тремя положениями — бейте туда, где она сейчас.
+            </p>
             <Button
               onClick={() => {
-                // Reset here, not just in handleNewRound — otherwise time
-                // spent reading this screen (or an introDialogue scene
-                // before it) would count toward the round's duration and
-                // throw off the fast/slow classification in stories.ts.
                 roundStartRef.current = performance.now();
                 setPhase("playing");
               }}
@@ -526,6 +440,9 @@ export function SpankGameRate({
             <p className="mt-3 text-sm leading-relaxed text-neutral-200" data-testid="story-finale">
               {finaleBeat?.text}
             </p>
+            {precision !== null && (
+              <p className="mt-2 text-xs text-neutral-500">Точность за раунд: {precision}%</p>
+            )}
             {nextTeaser && (
               <p
                 className="mt-4 border-t border-white/10 pt-4 text-sm italic leading-relaxed text-indigo-200"

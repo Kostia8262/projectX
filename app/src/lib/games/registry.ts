@@ -5,7 +5,13 @@
 // now — real art/shaders come later per the user's own pipeline.
 export type GameStatus = "available" | "coming-soon";
 export type ImplementUnlock = "free" | "subscription" | "purchase";
-export type GameMechanic = "fixed" | "rate";
+// "fixed"/"rate" are the original two engines (SpankGame.tsx / SpankGameRate.tsx).
+// "aim"/"rhythm"/"sequence" are Рин's free-play mechanic testbeds — each a
+// separate engine component (SpankGameAim/Rhythm/Sequence.tsx) trying out a
+// mechanic meant to be reused later in her chapters (see lib/content) once
+// proven out here. Deliberately not added to Ада's pilots yet — one
+// character's free-play pool is enough to iterate on before spreading it.
+export type GameMechanic = "fixed" | "rate" | "aim" | "rhythm" | "sequence";
 
 // Lives here (not traits.ts) because it's fundamentally a property of the
 // implement/pace combo, not of the character reacting to it — see
@@ -245,14 +251,14 @@ export const GAMES: GameDefinition[] = [
   {
     id: "pilot-a",
     title: "Пилот A — Знакомство",
-    tagline: "Базовый темп",
-    description: "Стандартный набор орудий, ровный набор нагрева — опорная версия для сравнения с остальными.",
+    tagline: "Она подсказывает, куда",
+    description: "Она чуть двигается — цель смещается между заходами, попадите точно, а не куда попало.",
     status: "available",
     type: "free",
     characterLabel: "Персонаж A (заглушка)",
     implementIds: ["hand", "ruler", "paddle"],
     maxHeat: 100,
-    mechanic: "fixed",
+    mechanic: "aim",
   },
   {
     id: "pilot-b",
@@ -269,14 +275,14 @@ export const GAMES: GameDefinition[] = [
   {
     id: "pilot-c",
     title: "Пилот C — Быстрый раунд",
-    tagline: "Только рука",
-    description: "Один инструмент, высокий нагрев за касание — проверка короткой, «на пару минут», сессии.",
+    tagline: "Поймайте момент",
+    description: "Один инструмент, но точный момент важнее силы — попадите в нужную фазу, а не куда попало.",
     status: "available",
     type: "free",
     characterLabel: "Персонаж C (заглушка)",
     implementIds: ["hand"],
     maxHeat: 60,
-    mechanic: "fixed",
+    mechanic: "rhythm",
   },
   {
     id: "pilot-d",
@@ -301,22 +307,22 @@ export const GAMES: GameDefinition[] = [
   {
     id: "pilot-e",
     title: "Пилот E — Полное доверие",
-    tagline: "Всё, что есть",
+    tagline: "Запомните, что она просит",
     description:
-      "Доступны все орудия сразу — проверка полного диапазона для персонажа с низкой толерантностью, а не только её обычного gentle/moderate набора.",
+      "Она называет порядок орудий один раз — воссоздайте его в точности. Ошиблись — начинайте заново.",
     status: "available",
     type: "free",
     characterLabel: "Персонаж E (заглушка)",
     implementIds: ["hand", "ruler", "paddle", "brush", "belt", "flogger", "cane", "riding-crop", "paddle-studded"],
     maxHeat: 140,
-    mechanic: "fixed",
+    mechanic: "sequence",
   },
   {
     id: "pilot-f",
     title: "Пилот F — Не сбавляя темп",
-    tagline: "Скорость на пределе",
+    tagline: "Держите её темп, не свой",
     description:
-      "Полный набор орудий на механике по темпу — проверка, как персонаж с низкой толерантностью держит нарастающий ритм, а не только фиксированную нагрузку.",
+      "Она хочет конкретную скорость, не «максимальную» — цель на шкале темпа время от времени смещается, попадание в неё выгоднее слепой спешки.",
     status: "available",
     type: "free",
     characterLabel: "Персонаж F (заглушка)",
