@@ -13,7 +13,7 @@ function placeholderSvg(title: string, from: string, to: string) {
         <stop offset="1" stop-color="${to}" />
       </linearGradient>
     </defs>
-    <rect width="100%" height="100%" fill="#0a0a0d" />
+    <rect width="100%" height="100%" fill="#0a0a0a" />
     <rect x="16" y="16" width="448" height="608" rx="24" fill="url(#g)" opacity="0.35" />
     <rect x="16" y="16" width="448" height="608" rx="24" fill="none" stroke="white" stroke-opacity="0.15" />
     <text x="240" y="320" text-anchor="middle" font-family="sans-serif" font-size="28" font-weight="700" fill="white">${title}</text>

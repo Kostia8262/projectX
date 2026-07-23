@@ -13,7 +13,7 @@ import { ACHIEVEMENTS, computeUnlocked } from "@/lib/achievements";
 import { RewardsPanel } from "@/components/game/RewardsPanel";
 import { PageTitle } from "@/components/ui/Heading";
 import { Card } from "@/components/ui/Card";
-import { Button } from "@/components/ui/Button";
+import { Button, BRAND_GRADIENT_CLASS } from "@/components/ui/Button";
 
 type ShopState = { balance: number; owned: string[] } | null;
 
@@ -44,7 +44,7 @@ function ToggleRow({
       <span className="text-sm text-white">{label}</span>
       <span
         className={`relative h-6 w-11 rounded-full transition ${
-          value ? "bg-gradient-to-r from-fuchsia-500 to-indigo-500" : "bg-white/10"
+          value ? BRAND_GRADIENT_CLASS : "bg-white/10"
         }`}
       >
         <span
@@ -101,7 +101,7 @@ export function Cabinet({ address }: { address: string }) {
   });
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl gap-6 px-6 py-10">
+    <div className="mx-auto flex w-full max-w-5xl gap-6 px-6 py-10">
       <nav className="flex w-44 shrink-0 flex-col gap-1">
         {TABS.map((t) => (
           <button
@@ -186,7 +186,7 @@ export function Cabinet({ address }: { address: string }) {
                     >
                       <span className="h-8 w-8 rounded-md" style={{ backgroundColor: impl.color }} />
                       <p className="text-xs font-medium text-white">{impl.name}</p>
-                      <p className="text-[11px] text-neutral-500">{label}</p>
+                      <p className="text-xs text-neutral-500">{label}</p>
                       {!owned && impl.unlock === "purchase" && (
                         <Button size="sm">Купить</Button>
                       )}
@@ -232,7 +232,7 @@ export function Cabinet({ address }: { address: string }) {
               <div className="flex flex-col gap-3">
                 <ToggleRow label="Звук" value={sound} onChange={setSound} />
                 <ToggleRow label="Вибрация" value={haptics} onChange={setHaptics} />
-                <p className="text-[11px] text-neutral-500">
+                <p className="text-xs text-neutral-500">
                   Плейсхолдеры — реального звука/вибрации пока нет.
                 </p>
               </div>

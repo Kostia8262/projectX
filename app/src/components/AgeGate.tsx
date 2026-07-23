@@ -21,7 +21,7 @@ function friendlyConnectError(message: string): string {
 function GateCard({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center px-6">
-      <Card size="lg" className="w-full max-w-md text-center shadow-2xl shadow-black/40">
+      <Card size="lg" shadow="elevated" className="w-full max-w-md text-center">
         {children}
       </Card>
     </div>

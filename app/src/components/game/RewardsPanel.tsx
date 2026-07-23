@@ -5,7 +5,7 @@ import { REWARDS } from "@/lib/rewards/registry";
 import { useSharedAffinity } from "@/hooks/useSharedAffinity";
 import { SectionHeading } from "@/components/ui/Heading";
 import { Card, Tile } from "@/components/ui/Card";
-import { Button } from "@/components/ui/Button";
+import { Button, BRAND_GRADIENT_CLASS } from "@/components/ui/Button";
 
 type RevealState =
   | { status: "idle" }
@@ -57,7 +57,7 @@ export function RewardsPanel({ address }: { address: string }) {
 
         <div className="relative mt-4 mb-2 h-2.5 w-full overflow-visible rounded-full bg-white/10">
           <div
-            className="h-full rounded-full bg-gradient-to-r from-fuchsia-500 to-indigo-500 transition-all duration-500"
+            className={`h-full rounded-full ${BRAND_GRADIENT_CLASS} transition-all duration-500`}
             style={{ width: `${fillPercent}%` }}
           />
           {REWARDS.map((reward) => {
@@ -76,11 +76,11 @@ export function RewardsPanel({ address }: { address: string }) {
           })}
         </div>
         {nextReward ? (
-          <p className="mb-2 text-[11px] text-neutral-500">
+          <p className="mb-2 text-xs text-neutral-500">
             До «{nextReward.title}»: {Math.max(0, nextReward.threshold - Math.floor(affinity))}
           </p>
         ) : (
-          <p className="mb-2 text-[11px] text-emerald-400">Все пороги пройдены</p>
+          <p className="mb-2 text-xs text-emerald-400">Все пороги пройдены</p>
         )}
 
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -104,7 +104,7 @@ export function RewardsPanel({ address }: { address: string }) {
                 )}
                 <p className="text-xs font-medium text-white">{reward.title}</p>
                 {state.status === "shown" ? (
-                  <p className="text-[11px] text-emerald-400">Открыто</p>
+                  <p className="text-xs text-emerald-400">Открыто</p>
                 ) : unlocked ? (
                   <Button
                     onClick={() => reveal(reward.id)}
@@ -114,10 +114,10 @@ export function RewardsPanel({ address }: { address: string }) {
                     {state.status === "loading" ? "…" : "Открыть"}
                   </Button>
                 ) : (
-                  <p className="text-[11px] text-neutral-500">нужно {reward.threshold}</p>
+                  <p className="text-xs text-neutral-500">нужно {reward.threshold}</p>
                 )}
                 {state.status === "error" && (
-                  <p className="text-[11px] text-red-400">{state.message}</p>
+                  <p className="text-xs text-red-400">{state.message}</p>
                 )}
               </Tile>
             );

@@ -9,7 +9,8 @@ import {
   paceForRate,
   type GameDefinition,
 } from "@/lib/games/registry";
-import { STORIES, resolveStoryVariant, type GameStory } from "@/lib/games/stories";
+import { spankButtonBackground } from "@/lib/games/style";
+import { STORIES, resolveStoryVariant, type GameStory, type StoryBeat } from "@/lib/games/stories";
 import { playTapSound, playReactionSound, playFinaleSound } from "@/lib/sound";
 import { CharacterStage } from "@/components/game/CharacterStage";
 import { OverrideControls } from "@/components/game/OverrideControls";
@@ -20,6 +21,8 @@ import { applyRoundToCharacter } from "@/lib/characters/roundHook";
 import { getCharacterForGame } from "@/lib/characters/registry";
 import { isOverrideActive, type OverrideState } from "@/lib/characters/override";
 import { loadFreshness, loadOverride, loadTraits } from "@/lib/characters/storage";
+import { recordBranchChoice } from "@/lib/characters/branch";
+import type { ChapterDecision } from "@/lib/content/types";
 import {
   freshnessCharge,
   implementBlockReason,
@@ -60,18 +63,23 @@ export function SpankGameRate({
   titleOverride,
   storyOverride,
   nextTeaser,
+  decision,
+  decisionIndex,
 }: {
   address: string;
   game: GameDefinition;
   titleOverride?: string;
   storyOverride?: GameStory;
   nextTeaser?: string;
+  decision?: ChapterDecision;
+  decisionIndex?: number;
 }) {
   const { energy, max, spend } = useEnergyContext();
   const energyRefill = useEnergyRefill();
   const [heat, setHeat] = useState(0);
   const [phase, setPhase] = useState<Phase>("intro");
-  const [finaleText, setFinaleText] = useState("");
+  const [finaleBeat, setFinaleBeat] = useState<StoryBeat | null>(null);
+  const [pickedOptionId, setPickedOptionId] = useState<string | null>(null);
   const [rate, setRate] = useState(0);
   const implements_ = implementsFor(game);
   const character = getCharacterForGame(game.id);
@@ -158,8 +166,8 @@ export function SpankGameRate({
     if (next >= game.maxHeat) {
       const durationMs = now - roundStartRef.current;
       const averagePace = paceSamplesRef.current > 0 ? paceSumRef.current / paceSamplesRef.current : 0;
-      setFinaleText(
-        resolveStoryVariant(game.id, {
+      setFinaleBeat(
+        resolveStoryVariant(story, game.id, {
           durationMs,
           implementId: selected.id,
           averagePace,
@@ -186,6 +194,7 @@ export function SpankGameRate({
     rateRef.current = 0;
     setRate(0);
     lastTapRef.current = null;
+    setPickedOptionId(null);
     setPhase("playing");
   }
 
@@ -240,11 +249,7 @@ export function SpankGameRate({
           disabled={outOfEnergy || phase !== "playing"}
           data-testid="spank-button"
           className="mx-auto flex h-32 w-32 items-center justify-center rounded-full border border-white/10 text-lg font-semibold text-white shadow-2xl transition active:scale-95 disabled:opacity-40 lg:h-40 lg:w-40"
-          style={{
-            background: selected
-              ? `linear-gradient(135deg, ${selected.color}, #6366f1)`
-              : "#333",
-          }}
+          style={{ background: spankButtonBackground(selected?.color) }}
         >
           {outOfEnergy ? "Нет энергии" : "Шлёп"}
         </button>
@@ -261,7 +266,7 @@ export function SpankGameRate({
                 disabled={blocked}
                 data-testid={`implement-${impl.id}`}
                 title={reason ? IMPLEMENT_BLOCK_MESSAGES[reason] : undefined}
-                className={`flex h-16 w-20 flex-col items-center justify-center rounded-xl border text-[11px] font-medium transition ${
+                className={`flex h-16 w-20 flex-col items-center justify-center rounded-xl border text-xs font-medium transition ${
                   blocked
                     ? "cursor-not-allowed border-white/5 bg-white/[0.01] text-neutral-600 opacity-50"
                     : selectedId === impl.id
@@ -325,9 +330,17 @@ export function SpankGameRate({
       {phase === "intro" && story && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/70 p-6 backdrop-blur-sm">
           <Card size="lg" className="max-w-md text-center">
+            {story.intro.image && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={story.intro.image}
+                alt=""
+                className="mb-3 h-40 w-full rounded-xl object-cover"
+              />
+            )}
             <Eyebrow>{titleOverride ?? game.title}</Eyebrow>
             <p className="mt-3 text-sm leading-relaxed text-neutral-200" data-testid="story-intro">
-              {story.intro}
+              {story.intro.text}
             </p>
             <Button onClick={() => setPhase("playing")} data-testid="story-start-button" size="lg" className="mt-5">
               Начать
@@ -339,9 +352,17 @@ export function SpankGameRate({
       {phase === "finale" && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/70 p-6 backdrop-blur-sm">
           <Card size="lg" className="max-w-md text-center">
+            {finaleBeat?.image && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={finaleBeat.image}
+                alt=""
+                className="mb-3 h-40 w-full rounded-xl object-cover"
+              />
+            )}
             <SectionHeading dense>Кульминация</SectionHeading>
             <p className="mt-3 text-sm leading-relaxed text-neutral-200" data-testid="story-finale">
-              {finaleText}
+              {finaleBeat?.text}
             </p>
             {nextTeaser && (
               <p
@@ -351,6 +372,40 @@ export function SpankGameRate({
                 {nextTeaser}
               </p>
             )}
+
+            {decision && (
+              <div className="mt-4 border-t border-white/10 pt-4">
+                {pickedOptionId === null ? (
+                  <>
+                    <p className="text-sm leading-relaxed text-neutral-200" data-testid="decision-prompt">
+                      {decision.prompt.text}
+                    </p>
+                    <div className="mt-3 flex flex-col gap-2">
+                      {decision.options.map((option) => (
+                        <Button
+                          key={option.id}
+                          variant="secondary"
+                          onClick={() => {
+                            if (character) {
+                              recordBranchChoice(address, character.id, decisionIndex ?? 0, option.id);
+                            }
+                            setPickedOptionId(option.id);
+                          }}
+                          data-testid={`decision-option-${option.id}`}
+                        >
+                          {option.label}
+                        </Button>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm leading-relaxed text-indigo-200" data-testid="decision-result">
+                    {decision.options.find((o) => o.id === pickedOptionId)?.result.text}
+                  </p>
+                )}
+              </div>
+            )}
+
             <p className="mt-3 text-xs text-neutral-500">
               Прогресс в «Отклике» уже сохранён.
             </p>

@@ -1,4 +1,5 @@
-import { requireAdminSession } from "@/lib/admin/session";
+import { requireAdminSession, requireAdminRole } from "@/lib/admin/session";
+import { canEditGames } from "@/lib/admin/roles";
 import { GAMES, type GameOverride, type GameStatus } from "@/lib/games/registry";
 import { clearGameOverride, getGameOverrides, setGameOverride } from "@/lib/shop/store";
 
@@ -47,7 +48,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const admin = await requireAdminSession();
+  const admin = await requireAdminRole(canEditGames);
   if (!admin) {
     return Response.json({ error: "Admin only" }, { status: 403 });
   }
@@ -68,7 +69,7 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const admin = await requireAdminSession();
+  const admin = await requireAdminRole(canEditGames);
   if (!admin) {
     return Response.json({ error: "Admin only" }, { status: 403 });
   }

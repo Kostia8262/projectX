@@ -3,30 +3,21 @@
 import { type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
 import { PageTitle } from "@/components/ui/Heading";
+import { useAdminWhoAmI } from "@/hooks/useAdminWhoAmI";
+import { canManageEmployees, canEditGames, ROLE_LABELS, type EmployeeRole } from "@/lib/admin/roles";
 
-type WhoAmI =
-  | { isAdmin: true; address: string }
-  | { isAdmin: false; reason: "no-session" }
-  | { isAdmin: false; reason: "not-wallet"; address: string }
-  | { isAdmin: false; reason: "not-admin"; address: string };
-
-async function fetchWhoAmI(): Promise<WhoAmI> {
-  const res = await fetch("/api/admin/whoami");
-  return res.json();
-}
-
-const TABS = [
-  { href: "/admin", label: "Кошельки" },
-  { href: "/admin/employees", label: "Сотрудники" },
-  { href: "/admin/transactions", label: "Транзакции" },
-  { href: "/admin/games", label: "Игры" },
+const TABS: { href: string; label: string; visible: (role: EmployeeRole) => boolean }[] = [
+  { href: "/admin", label: "Кошельки", visible: () => true },
+  { href: "/admin/employees", label: "Сотрудники", visible: canManageEmployees },
+  { href: "/admin/transactions", label: "Транзакции", visible: () => true },
+  { href: "/admin/games", label: "Игры", visible: canEditGames },
+  { href: "/admin/chapters", label: "Главы", visible: canEditGames },
 ];
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const whoAmIQuery = useQuery({ queryKey: ["admin-whoami"], queryFn: fetchWhoAmI });
+  const whoAmIQuery = useAdminWhoAmI();
 
   if (whoAmIQuery.isLoading) {
     return <p className="p-10 text-neutral-500">Загрузка…</p>;
@@ -59,15 +50,20 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6 py-10">
-      <div>
-        <PageTitle>Админка</PageTitle>
-        <p className="mt-1 text-sm text-neutral-400">
-          Минимальный инструмент поддержки/тестирования — кошельки, доступ сотрудников, история
-          платежей.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <PageTitle>Админка</PageTitle>
+          <p className="mt-1 text-sm text-neutral-400">
+            Минимальный инструмент поддержки/тестирования — кошельки, доступ сотрудников, история
+            платежей.
+          </p>
+        </div>
+        <span className="mt-1 shrink-0 rounded-full border border-white/10 bg-white/[0.06] px-3 py-1 text-xs text-neutral-300">
+          Роль: {ROLE_LABELS[who.role]}
+        </span>
       </div>
       <nav className="flex gap-1 border-b border-white/10">
-        {TABS.map((tab) => {
+        {TABS.filter((tab) => tab.visible(who.role)).map((tab) => {
           const active = pathname === tab.href;
           return (
             <Link

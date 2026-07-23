@@ -9,6 +9,9 @@ import { SectionHeading } from "@/components/ui/Heading";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input, FORM_CONTROL_CLASS } from "@/components/ui/Input";
+import { Table } from "@/components/ui/Table";
+import { useAdminWhoAmI } from "@/hooks/useAdminWhoAmI";
+import { canManageWallets, ROLE_LABELS } from "@/lib/admin/roles";
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
@@ -32,6 +35,8 @@ function subscriptionSourceLabel(source: AdminUserRow["subscriptionSource"]): st
 
 export default function WalletsPage() {
   const queryClient = useQueryClient();
+  const whoAmIQuery = useAdminWhoAmI();
+  const canManage = whoAmIQuery.data?.isAdmin && canManageWallets(whoAmIQuery.data.role);
   const [selectedAddress, setSelectedAddress] = useState("");
   const [coinAmount, setCoinAmount] = useState("100");
   const [accessoryId, setAccessoryId] = useState(ACCESSORIES[0]?.id ?? "");
@@ -121,65 +126,53 @@ export default function WalletsPage() {
         <SectionHeading dense className="mb-2">
           Кошельки
         </SectionHeading>
-        <div className="overflow-x-auto rounded-xl border border-white/10">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-white/[0.04] text-neutral-400">
-              <tr>
-                <th className="px-3 py-2">Адрес</th>
-                <th className="px-3 py-2">Монеты</th>
-                <th className="px-3 py-2">Аксессуаров</th>
-                <th className="px-3 py-2">Free-план</th>
-                <th className="px-3 py-2">Подписка</th>
-              </tr>
-            </thead>
-            <tbody>
-              {usersQuery.isLoading && (
-                <tr>
-                  <td className="px-3 py-3 text-neutral-500" colSpan={5}>
-                    Загрузка…
-                  </td>
-                </tr>
-              )}
-              {usersQuery.data?.users.length === 0 && (
-                <tr>
-                  <td className="px-3 py-3 text-neutral-500" colSpan={5}>
-                    Пока ни один адрес не оставил следов в магазине/подписке.
-                  </td>
-                </tr>
-              )}
-              {usersQuery.data?.users.map((u) => (
-                <tr
-                  key={u.address}
-                  onClick={() => setSelectedAddress(u.address)}
-                  data-testid={`admin-user-${u.address}`}
-                  className={`cursor-pointer border-t border-white/5 font-mono hover:bg-white/[0.04] ${
-                    selectedAddress.toLowerCase() === u.address ? "bg-fuchsia-500/10" : ""
-                  }`}
-                >
-                  <td className="px-3 py-2">{u.address}</td>
-                  <td className="px-3 py-2">{u.balance}</td>
-                  <td className="px-3 py-2">{u.ownedIds.length}</td>
-                  <td className="px-3 py-2">{u.freePlanActivated ? "да" : "нет"}</td>
-                  <td className="px-3 py-2">
-                    {u.subscription ? (
-                      <span className={u.subscription.active ? "text-emerald-400" : "text-neutral-500"}>
-                        {tierName(u.subscription.tierId)}
-                        {u.subscription.active ? " (активна" : " (истекла"}
-                        {u.subscriptionSource && u.subscriptionSource !== "chain"
-                          ? `, ${subscriptionSourceLabel(u.subscriptionSource)})`
-                          : ")"}
-                      </span>
-                    ) : (
-                      <span className="text-neutral-600">—</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Table columns={["Адрес", "Монеты", "Аксессуаров", "Free-план", "Подписка"]}>
+          {usersQuery.isLoading && (
+            <tr>
+              <td className="px-3 py-3 text-neutral-500" colSpan={5}>
+                Загрузка…
+              </td>
+            </tr>
+          )}
+          {usersQuery.data?.users.length === 0 && (
+            <tr>
+              <td className="px-3 py-3 text-neutral-500" colSpan={5}>
+                Пока ни один адрес не оставил следов в магазине/подписке.
+              </td>
+            </tr>
+          )}
+          {usersQuery.data?.users.map((u) => (
+            <tr
+              key={u.address}
+              onClick={() => setSelectedAddress(u.address)}
+              data-testid={`admin-user-${u.address}`}
+              className={`cursor-pointer border-t border-white/5 font-mono hover:bg-white/[0.04] ${
+                selectedAddress.toLowerCase() === u.address ? "bg-fuchsia-500/10" : ""
+              }`}
+            >
+              <td className="px-3 py-2">{u.address}</td>
+              <td className="px-3 py-2">{u.balance}</td>
+              <td className="px-3 py-2">{u.ownedIds.length}</td>
+              <td className="px-3 py-2">{u.freePlanActivated ? "да" : "нет"}</td>
+              <td className="px-3 py-2">
+                {u.subscription ? (
+                  <span className={u.subscription.active ? "text-emerald-400" : "text-neutral-500"}>
+                    {tierName(u.subscription.tierId)}
+                    {u.subscription.active ? " (активна" : " (истекла"}
+                    {u.subscriptionSource && u.subscriptionSource !== "chain"
+                      ? `, ${subscriptionSourceLabel(u.subscriptionSource)})`
+                      : ")"}
+                  </span>
+                ) : (
+                  <span className="text-neutral-600">—</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </Table>
       </div>
 
+      {canManage ? (
       <Card>
         <SectionHeading dense className="mb-3">
           Управление адресом
@@ -205,7 +198,7 @@ export default function WalletsPage() {
             {selectedUser.ownedIds.map((id) => (
               <span
                 key={id}
-                className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] text-neutral-300"
+                className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs text-neutral-300"
               >
                 {getAccessory(id)?.name ?? id}
                 <button
@@ -324,6 +317,11 @@ export default function WalletsPage() {
           </div>
         </div>
       </Card>
+      ) : whoAmIQuery.isLoading ? null : (
+        <p className="text-sm text-neutral-500">
+          Действия с кошельком (монеты, аксессуары, подписка) недоступны роли «{ROLE_LABELS.viewer}».
+        </p>
+      )}
     </div>
   );
 }

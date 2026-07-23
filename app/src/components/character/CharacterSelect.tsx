@@ -4,9 +4,12 @@ import { CHARACTERS, type CharacterDefinition } from "@/lib/characters/registry"
 import { loadTraits } from "@/lib/characters/storage";
 import { relationshipStatusLine } from "@/lib/characters/traits";
 import { useCharacterAffinity } from "@/hooks/useCharacterAffinity";
-import { getCurrentChapter } from "@/lib/games/chapters";
+import { useCharacterBranch } from "@/hooks/useCharacterBranch";
+import { useCurrentChapter } from "@/hooks/useChapters";
 import { PageTitle } from "@/components/ui/Heading";
 import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
+import { NotificationBell } from "@/components/character/IntroNotifications";
 
 function statusColor(boredom: number, defiance: number): string {
   if (boredom > 60) return "text-amber-300";
@@ -27,11 +30,20 @@ function CharacterCard({
 }) {
   const traits = loadTraits(address, character);
   const { affinity } = useCharacterAffinity(address, character);
-  const currentChapter = getCurrentChapter(character.id, affinity);
+  const { branchPath } = useCharacterBranch(address, character.id);
+  const currentChapter = useCurrentChapter(character.id, affinity, branchPath);
   const isBored = traits.boredom > 60;
 
   return (
-    <div className="group flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-white/[0.06] shadow-xl shadow-black/30 backdrop-blur-2xl transition-all duration-300 hover:-translate-y-1 hover:border-white/25 hover:shadow-2xl hover:shadow-black/50">
+    // Hover state mirrors Card's "elevated" shadow tier (shadow-2xl shadow-black/40)
+    // — kept as a literal hover: pair here since Tailwind's class scanner needs
+    // the full class name in source and can't see it built from a JS template.
+    <Card
+      size="none"
+      className="group relative flex flex-col overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:border-white/25 hover:shadow-2xl hover:shadow-black/40"
+    >
+      <NotificationBell character={character} className="right-3 top-3" />
+
       {/* Poster-style hero area — full-bleed color placeholder for now,
           swaps for real character art later without changing this layout. */}
       <button
@@ -42,7 +54,7 @@ function CharacterCard({
         <div
           className="absolute inset-0 transition-transform duration-500 ease-out group-hover:scale-110"
           style={{
-            background: `linear-gradient(165deg, ${character.accentColor}, ${character.accentColor}55 60%, #0a0a0f 100%)`,
+            background: `linear-gradient(165deg, ${character.accentColor}, ${character.accentColor}55 60%, #0a0a0a 100%)`,
           }}
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/10 to-transparent" />
@@ -61,21 +73,23 @@ function CharacterCard({
         </div>
       </button>
 
-      <div className="flex items-center justify-between gap-3 border-t border-white/10 bg-black/20 px-5 py-3">
-        <span className="truncate text-xs text-neutral-500">{currentChapter.chapterTitle}</span>
-        <Button
-          onClick={(e) => {
-            e.stopPropagation();
-            onPlayChapter(currentChapter.id);
-          }}
-          data-testid={`continue-${character.id}`}
-          size="sm"
-          className="shrink-0"
-        >
-          Продолжить
-        </Button>
-      </div>
-    </div>
+      {currentChapter && (
+        <div className="flex items-center justify-between gap-3 border-t border-white/10 bg-black/20 px-5 py-3">
+          <span className="truncate text-xs text-neutral-500">{currentChapter.chapterTitle}</span>
+          <Button
+            onClick={(e) => {
+              e.stopPropagation();
+              onPlayChapter(currentChapter.id);
+            }}
+            data-testid={`continue-${character.id}`}
+            size="sm"
+            className="shrink-0"
+          >
+            Продолжить
+          </Button>
+        </div>
+      )}
+    </Card>
   );
 }
 

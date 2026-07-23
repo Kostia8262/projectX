@@ -1,5 +1,6 @@
 import { isAddress } from "viem";
-import { requireAdminSession } from "@/lib/admin/session";
+import { requireAdminRole } from "@/lib/admin/session";
+import { canManageWallets } from "@/lib/admin/roles";
 import { adminCreditCoins, adminDeductCoins } from "@/lib/shop/store";
 
 function parseBody(body: unknown): { address: string; amount: number } | null {
@@ -12,7 +13,7 @@ function parseBody(body: unknown): { address: string; amount: number } | null {
 }
 
 export async function POST(request: Request) {
-  const admin = await requireAdminSession();
+  const admin = await requireAdminRole(canManageWallets);
   if (!admin) {
     return Response.json({ error: "Admin only" }, { status: 403 });
   }
@@ -30,7 +31,7 @@ export async function POST(request: Request) {
 /// POST, just the opposite direction; a support/testing "undo" for
 /// grant-coins.
 export async function DELETE(request: Request) {
-  const admin = await requireAdminSession();
+  const admin = await requireAdminRole(canManageWallets);
   if (!admin) {
     return Response.json({ error: "Admin only" }, { status: 403 });
   }

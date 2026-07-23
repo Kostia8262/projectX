@@ -10,17 +10,21 @@ import { SpankGame } from "@/components/game/SpankGame";
 import { SpankGameRate } from "@/components/game/SpankGameRate";
 import { CharacterSelect } from "@/components/character/CharacterSelect";
 import { CharacterPage } from "@/components/character/CharacterPage";
+import { CharacterHistoryPage } from "@/components/character/CharacterHistoryPage";
 import { AccessoryShop } from "@/components/shop/AccessoryShop";
 import { SubscriptionTiers } from "@/components/subscription/SubscriptionTiers";
 import { SubscriptionStatusBanner } from "@/components/SubscriptionStatusBanner";
 import { useSiweSession } from "@/hooks/useSiweSession";
 import { useEffectiveGame } from "@/hooks/useGameOverrides";
-import { getChapter } from "@/lib/games/chapters";
+import { useChapter } from "@/hooks/useChapters";
+import { useQueryClient } from "@tanstack/react-query";
+import type { ChapterRecord } from "@/lib/content/types";
 import { getCharacter } from "@/lib/characters/registry";
 
 type View =
   | { kind: "characters" }
   | { kind: "character"; characterId: string }
+  | { kind: "history"; characterId: string }
   | { kind: "cabinet" }
   | { kind: "shop" }
   | { kind: "subscription" }
@@ -44,6 +48,7 @@ function loadInitialView(): View {
 }
 
 function AuthenticatedApp({ address }: { address: string }) {
+  const queryClient = useQueryClient();
   const [view, setViewState] = useState<View>(loadInitialView);
 
   function setView(next: View) {
@@ -54,13 +59,17 @@ function AuthenticatedApp({ address }: { address: string }) {
   }
 
   const activeGame = useEffectiveGame(view.kind === "game" ? view.gameId : undefined);
-  const activeChapter =
-    view.kind === "game" && view.chapterId ? getChapter(view.chapterId) : undefined;
-  const activeCharacterPage = view.kind === "character" ? getCharacter(view.characterId) : undefined;
+  const activeChapter = useChapter(view.kind === "game" ? view.chapterId : undefined);
+  const activeCharacterPage =
+    view.kind === "character" || view.kind === "history"
+      ? getCharacter(view.characterId)
+      : undefined;
   const inGame = view.kind === "game";
 
   function goBack() {
     if (view.kind === "game" && view.characterId) {
+      setView({ kind: "character", characterId: view.characterId });
+    } else if (view.kind === "history") {
       setView({ kind: "character", characterId: view.characterId });
     } else {
       setView({ kind: "characters" });
@@ -70,10 +79,17 @@ function AuthenticatedApp({ address }: { address: string }) {
   const backLabel =
     view.kind === "game" && view.characterId
       ? `← ${getCharacter(view.characterId)?.name ?? "Назад"}`
-      : "← Персонажи";
+      : view.kind === "history"
+        ? `← ${getCharacter(view.characterId)?.name ?? "Назад"}`
+        : "← Персонажи";
 
   function playChapter(chapterId: string) {
-    const chapter = getChapter(chapterId);
+    // Not a hook call — reads whatever's already cached under the shared
+    // ["chapters"] queryKey (see hooks/useChapters.ts). Safe here because
+    // this only ever fires from a button that itself only rendered once
+    // that same query had already resolved.
+    const chapters = queryClient.getQueryData<ChapterRecord[]>(["chapters"]);
+    const chapter = chapters?.find((c) => c.id === chapterId);
     if (chapter) {
       setView({ kind: "game", gameId: chapter.gameId, chapterId, characterId: chapter.characterId });
     }
@@ -123,7 +139,12 @@ function AuthenticatedApp({ address }: { address: string }) {
               // height (Cabinet's tabs especially) would otherwise re-center
               // the whole block vertically on every height change, making the
               // nav/content visibly jump instead of just resizing in place.
-              "flex flex-1 items-start justify-center overflow-y-auto py-10"
+              // scrollbar-gutter:stable for the same reason horizontally —
+              // this is the scroll container for every top-level tab
+              // (Персонажи/Магазин/Подписка/Кабинет), and without it the
+              // centered content shifts left/right depending on whether the
+              // tab you land on is tall enough to need a scrollbar.
+              "flex flex-1 items-start justify-center overflow-y-auto py-10 [scrollbar-gutter:stable]"
         }
       >
         {view.kind === "characters" ? (
@@ -144,6 +165,14 @@ function AuthenticatedApp({ address }: { address: string }) {
             onPlayGame={(gameId) =>
               setView({ kind: "game", gameId, characterId: activeCharacterPage.id })
             }
+            onOpenHistory={() =>
+              setView({ kind: "history", characterId: activeCharacterPage.id })
+            }
+          />
+        ) : view.kind === "history" && activeCharacterPage ? (
+          <CharacterHistoryPage
+            character={activeCharacterPage}
+            onBack={() => setView({ kind: "character", characterId: activeCharacterPage.id })}
           />
         ) : view.kind === "cabinet" ? (
           <Cabinet address={address} />
@@ -159,6 +188,8 @@ function AuthenticatedApp({ address }: { address: string }) {
               titleOverride={activeChapter?.chapterTitle}
               storyOverride={activeChapter?.story}
               nextTeaser={activeChapter?.nextTeaser}
+              decision={activeChapter?.decision}
+              decisionIndex={activeChapter ? activeChapter.order - 2 : undefined}
             />
           ) : (
             <SpankGame
@@ -167,6 +198,8 @@ function AuthenticatedApp({ address }: { address: string }) {
               titleOverride={activeChapter?.chapterTitle}
               storyOverride={activeChapter?.story}
               nextTeaser={activeChapter?.nextTeaser}
+              decision={activeChapter?.decision}
+              decisionIndex={activeChapter ? activeChapter.order - 2 : undefined}
             />
           )
         ) : null}

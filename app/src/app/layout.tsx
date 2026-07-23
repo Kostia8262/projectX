@@ -37,7 +37,7 @@ export default async function RootLayout({
       lang="ru"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-neutral-950">
+      <body className="min-h-full flex flex-col bg-neutral-950 font-sans text-neutral-100">
         <GradientBackdrop />
         <Providers initialState={initialState}>{children}</Providers>
       </body>

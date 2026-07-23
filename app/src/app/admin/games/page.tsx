@@ -2,11 +2,19 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { applyGameOverrides, type GameDefinition, type GameOverride, type GameStatus } from "@/lib/games/registry";
+import {
+  applyGameOverrides,
+  type GameDefinition,
+  type GameOverride,
+  type GameStatus,
+  type GameType,
+} from "@/lib/games/registry";
 import { SectionHeading } from "@/components/ui/Heading";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input, FORM_CONTROL_CLASS } from "@/components/ui/Input";
+import { useAdminWhoAmI } from "@/hooks/useAdminWhoAmI";
+import { canEditGames, ROLE_LABELS } from "@/lib/admin/roles";
 
 type GamesResponse = { games: GameDefinition[]; overrides: Record<string, GameOverride> };
 
@@ -25,6 +33,14 @@ type EditForm = {
   maxHeat: string;
 };
 
+type TypeFilter = "all" | GameType;
+
+const TYPE_FILTERS: { value: TypeFilter; label: string }[] = [
+  { value: "all", label: "Все" },
+  { value: "free", label: "Свободные" },
+  { value: "chapter", label: "Главы" },
+];
+
 function formFor(game: GameDefinition): EditForm {
   return {
     status: game.status,
@@ -37,9 +53,11 @@ function formFor(game: GameDefinition): EditForm {
 
 export default function GamesPage() {
   const queryClient = useQueryClient();
+  const whoAmIQuery = useAdminWhoAmI();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [form, setForm] = useState<EditForm | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
 
   const gamesQuery = useQuery({
     queryKey: ["admin-games"],
@@ -49,6 +67,11 @@ export default function GamesPage() {
   const effectiveGames = gamesQuery.data
     ? applyGameOverrides(gamesQuery.data.games, gamesQuery.data.overrides)
     : [];
+  // Free-play and chapter-only games are two separate pools by design (see
+  // GameType in games/registry.ts) — this filter is purely a display
+  // convenience so an admin editing one pool doesn't have to scroll past
+  // the other, not a data change.
+  const visibleGames = effectiveGames.filter((g) => typeFilter === "all" || g.type === typeFilter);
   const baseGames = gamesQuery.data?.games ?? [];
   const overrides = gamesQuery.data?.overrides ?? {};
 
@@ -100,6 +123,18 @@ export default function GamesPage() {
 
   const selectedBase = baseGames.find((g) => g.id === selectedId);
 
+  if (whoAmIQuery.isLoading) {
+    return <p className="text-sm text-neutral-500">Загрузка…</p>;
+  }
+  const who = whoAmIQuery.data;
+  if (!who?.isAdmin || !canEditGames(who.role)) {
+    return (
+      <p className="text-sm text-neutral-500">
+        Доступ запрещён — редактирование игр доступно только роли «{ROLE_LABELS.owner}».
+      </p>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-8">
       <div>
@@ -111,6 +146,19 @@ export default function GamesPage() {
           редактируются. Статус и текстовые поля можно переопределить — правки сразу видны игрокам
           в меню игр, на странице персонажа и в самой сцене.
         </p>
+        <div className="mb-3 flex gap-1.5">
+          {TYPE_FILTERS.map((f) => (
+            <Button
+              key={f.value}
+              onClick={() => setTypeFilter(f.value)}
+              variant={typeFilter === f.value ? "primary" : "secondary"}
+              size="sm"
+              data-testid={`admin-games-filter-${f.value}`}
+            >
+              {f.label}
+            </Button>
+          ))}
+        </div>
         <div className="overflow-x-auto rounded-xl border border-white/10">
           <table className="w-full text-left text-xs">
             <thead className="bg-white/[0.04] text-neutral-400">
@@ -118,6 +166,7 @@ export default function GamesPage() {
                 <th className="px-3 py-2">ID</th>
                 <th className="px-3 py-2">Название</th>
                 <th className="px-3 py-2">Тег</th>
+                <th className="px-3 py-2">Тип</th>
                 <th className="px-3 py-2">maxHeat</th>
                 <th className="px-3 py-2">Статус</th>
                 <th className="px-3 py-2" />
@@ -126,12 +175,19 @@ export default function GamesPage() {
             <tbody>
               {gamesQuery.isLoading && (
                 <tr>
-                  <td className="px-3 py-3 text-neutral-500" colSpan={6}>
+                  <td className="px-3 py-3 text-neutral-500" colSpan={7}>
                     Загрузка…
                   </td>
                 </tr>
               )}
-              {effectiveGames.map((game) => {
+              {!gamesQuery.isLoading && visibleGames.length === 0 && (
+                <tr>
+                  <td className="px-3 py-3 text-neutral-500" colSpan={7}>
+                    Нет игр этого типа.
+                  </td>
+                </tr>
+              )}
+              {visibleGames.map((game) => {
                 const overridden = Boolean(overrides[game.id]);
                 return (
                   <tr
@@ -145,6 +201,11 @@ export default function GamesPage() {
                     <td className="px-3 py-2 font-mono text-neutral-400">{game.id}</td>
                     <td className="px-3 py-2 text-neutral-200">{game.title}</td>
                     <td className="px-3 py-2 text-neutral-400">{game.tagline}</td>
+                    <td className="px-3 py-2">
+                      <span className={game.type === "chapter" ? "text-indigo-300" : "text-neutral-400"}>
+                        {game.type === "chapter" ? "глава" : "свободная"}
+                      </span>
+                    </td>
                     <td className="px-3 py-2 text-neutral-400">{game.maxHeat}</td>
                     <td className="px-3 py-2">
                       <span
@@ -154,7 +215,7 @@ export default function GamesPage() {
                       </span>
                     </td>
                     <td className="px-3 py-2">
-                      {overridden && <span className="text-[11px] text-amber-400/80">изменено</span>}
+                      {overridden && <span className="text-xs text-amber-400/80">изменено</span>}
                     </td>
                   </tr>
                 );

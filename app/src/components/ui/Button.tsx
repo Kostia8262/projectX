@@ -6,9 +6,15 @@ const SIZES = {
   lg: "px-6 py-3 text-sm",
 } as const;
 
+// The app's one signature gradient (CTA buttons, affinity/progress bars,
+// active toggles) — was independently retyped in three other files instead
+// of reused. Anywhere that needs this exact fuchsia→indigo solid fill
+// should import this instead of retyping the two color stops.
+export const BRAND_GRADIENT_CLASS = "bg-gradient-to-r from-fuchsia-500 to-indigo-500";
+
 const VARIANTS = {
   primary:
-    "bg-gradient-to-r from-fuchsia-500 to-indigo-500 text-white shadow-lg shadow-fuchsia-900/30 hover:brightness-110 disabled:hover:brightness-100",
+    `${BRAND_GRADIENT_CLASS} text-white shadow-lg shadow-fuchsia-900/30 hover:brightness-110 disabled:hover:brightness-100`,
   secondary:
     "border border-white/10 text-neutral-300 hover:border-white/30 hover:text-white",
   // Free/no-cost actions (the one CTA that isn't a purchase) — same emerald

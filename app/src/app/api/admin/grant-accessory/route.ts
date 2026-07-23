@@ -1,5 +1,6 @@
 import { isAddress } from "viem";
-import { requireAdminSession } from "@/lib/admin/session";
+import { requireAdminRole } from "@/lib/admin/session";
+import { canManageWallets } from "@/lib/admin/roles";
 import { getAccessory } from "@/lib/shop/accessories";
 import { adminGrantAccessory, adminRevokeAccessory } from "@/lib/shop/store";
 
@@ -14,7 +15,7 @@ function parseBody(body: unknown): { address: string; accessoryId: string } | nu
 }
 
 export async function POST(request: Request) {
-  const admin = await requireAdminSession();
+  const admin = await requireAdminRole(canManageWallets);
   if (!admin) {
     return Response.json({ error: "Admin only" }, { status: 403 });
   }
@@ -32,7 +33,7 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const admin = await requireAdminSession();
+  const admin = await requireAdminRole(canManageWallets);
   if (!admin) {
     return Response.json({ error: "Admin only" }, { status: 403 });
   }

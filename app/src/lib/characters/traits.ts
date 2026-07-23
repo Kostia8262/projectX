@@ -46,8 +46,8 @@ export function createInitialTraits(character: CharacterDefinition): TraitState 
 }
 
 const BOREDOM_PER_HOUR: Record<CharacterDefinition["boredomRate"], number> = {
-  fast: 4,
-  slow: 1.5,
+  fast: 12,
+  slow: 4.5,
 };
 
 // Defiance cools off passively too — reuses the same fast/slow axis as
@@ -327,12 +327,46 @@ export function isImplementBlocked(
   return implementBlockReason(state, character, implement, overriding) !== null;
 }
 
+type StatusTier = { min: number; text: string };
+
+// Affection-only ladder, checked after the Boredom/Defiance urgency branches
+// below — Affection moves solely through played rounds (applyRoundOutcome),
+// never decays on its own, so this ladder reads as "how far the bond has
+// come," not "how recently you visited" (that's what the Boredom branch is
+// for). Tiers ordered high→low; first match wins. Written in each
+// character's own voice rather than one shared wording — see traitNotes for
+// why that matters here too.
+const AFFECTION_STATUS_LADDER: Record<string, StatusTier[]> = {
+  rin: [
+    { min: 90, text: "Рин — с вами настоящая, без остатка прежнего страха." },
+    { min: 75, text: "Рин признаётся, что думает о вас чаще, чем следовало бы для «просто попробовать»." },
+    { min: 55, text: "Рин доверяет вам больше, чем сама от себя ожидала." },
+    { min: 35, text: "Рин понемногу расслабляется рядом с вами — и перестаёт извиняться за то, чего хочет." },
+    { min: 15, text: "Рин ещё присматривается, не решаясь довериться до конца." },
+    { min: -Infinity, text: "Рин будто снова не уверена, стоило ли писать вам первой." },
+  ],
+  ada: [
+    { min: 85, text: "Ада — без брони, и явно не планирует надевать её обратно." },
+    { min: 70, text: "Ада вычеркнула вас из своих «критериев» — там больше нечего отмечать." },
+    { min: 50, text: "Ада всё ещё проверяет вас — но уже не потому, что ждёт разочарования." },
+    { min: 30, text: "Ада перестала сверяться с ежедневником при каждой встрече — чуть-чуть, но перестала." },
+    { min: 10, text: "Ада держит дистанцию — обычная стартовая позиция, ничего личного." },
+    { min: -Infinity, text: "Ада держит дистанцию — вы пока даже не в её списке." },
+  ],
+};
+
 export function relationshipStatusLine(
   traits: TraitState,
   character: CharacterDefinition
 ): string {
   if (traits.defiance > 60) return `${character.name} сейчас дерзит — не время форсировать.`;
   if (traits.boredom > 60) return `${character.name} заскучала — стоит зайти и удивить её.`;
+
+  const ladder = AFFECTION_STATUS_LADDER[character.id];
+  const tier = ladder?.find((t) => traits.affection >= t.min);
+  if (tier) return tier.text;
+
+  // Fallback for any character without a defined ladder above.
   if (traits.affection > 70 && traits.submission > 60) return `${character.name} вам искренне доверяет.`;
   if (traits.affection < 20) return `${character.name} держит дистанцию.`;
   return `${character.name} присматривается к вам.`;

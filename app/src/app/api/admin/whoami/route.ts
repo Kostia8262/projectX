@@ -23,5 +23,5 @@ export async function GET() {
     return Response.json({ isAdmin: false, reason: "not-admin" as const, address: session.address });
   }
 
-  return Response.json({ isAdmin: true, address: adminSession.address });
+  return Response.json({ isAdmin: true, address: adminSession.address, role: adminSession.role });
 }

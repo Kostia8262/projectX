@@ -1,10 +1,11 @@
 import { isAddress } from "viem";
-import { requireAdminSession } from "@/lib/admin/session";
+import { requireAdminRole } from "@/lib/admin/session";
+import { canManageWallets } from "@/lib/admin/roles";
 import { getTierByContractId } from "@/lib/subscription/tiers";
 import { setSubscriptionOverride, clearSubscriptionOverride } from "@/lib/shop/store";
 
 export async function POST(request: Request) {
-  const admin = await requireAdminSession();
+  const admin = await requireAdminRole(canManageWallets);
   if (!admin) {
     return Response.json({ error: "Admin only" }, { status: 403 });
   }
@@ -27,7 +28,7 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const admin = await requireAdminSession();
+  const admin = await requireAdminRole(canManageWallets);
   if (!admin) {
     return Response.json({ error: "Admin only" }, { status: 403 });
   }

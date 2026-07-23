@@ -6,11 +6,16 @@ const VARIANTS = {
   success: "bg-emerald-500/20 text-emerald-300",
 } as const;
 
+// Shared by every plain informational pill (wallet address, sign-out
+// control, energy counter) that isn't a fit for Badge below — those carry
+// custom content/color (a font-mono address, a conditional low-energy red
+// state) that doesn't fit Badge's fixed small-uppercase-tag role. Shape
+// only, no color/background baked in, so callers stay free to vary those.
+export const PILL_SHAPE_CLASS = "rounded-full border px-3 py-1 text-xs";
+
 // Small uppercase status/category tag (Популярный, Без оплаты, Активна...).
-// For a plain informational pill (wallet address, a removable chip) use the
-// same `rounded-full border border-white/10 bg-white/[0.06] px-3 py-1
-// text-xs` shape directly — those carry custom content (a font-mono
-// address, an inline × button) that doesn't fit this component's tag role.
+// For a plain informational pill use `PILL_SHAPE_CLASS` directly instead —
+// see the comment above.
 export function Badge({
   children,
   variant = "neutral",

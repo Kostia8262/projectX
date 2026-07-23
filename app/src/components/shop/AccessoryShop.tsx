@@ -6,7 +6,7 @@ import { useWriteContract } from "wagmi";
 import { waitForTransactionReceipt } from "wagmi/actions";
 import { wagmiConfig } from "@/lib/wagmi";
 import { CHARACTERS } from "@/lib/characters/registry";
-import { accessoriesFor } from "@/lib/shop/accessories";
+import { accessoriesFor, type AccessoryCategory } from "@/lib/shop/accessories";
 import { TOPUP_PACKAGES } from "@/lib/shop/coinConfig";
 import { ERC20_APPROVE_ABI } from "@/lib/erc20Abi";
 import { COIN_TOPUP_ABI } from "@/lib/shop/topUpAbi";
@@ -23,6 +23,13 @@ const PAYMENT_TOKEN_ADDRESS = process.env.NEXT_PUBLIC_PAYMENT_TOKEN_ADDRESS as
 
 type ShopState = { balance: number; owned: string[]; discountPercent: number };
 
+const CATEGORY_FILTERS: { value: AccessoryCategory | "all"; label: string }[] = [
+  { value: "all", label: "Все" },
+  { value: "outfit", label: "Наряды" },
+  { value: "decor", label: "Декор" },
+  { value: "collectible", label: "Коллекционные" },
+];
+
 async function fetchShopState(): Promise<ShopState> {
   const res = await fetch("/api/shop/state");
   const data = await res.json();
@@ -38,6 +45,7 @@ export function AccessoryShop() {
   const { writeContractAsync } = useWriteContract();
   const [topUpPending, setTopUpPending] = useState<number | null>(null);
   const [topUpError, setTopUpError] = useState<string | null>(null);
+  const [categoryFilter, setCategoryFilter] = useState<AccessoryCategory | "all">("all");
 
   const stateQuery = useQuery({ queryKey: ["shop-state"], queryFn: fetchShopState });
 
@@ -95,7 +103,7 @@ export function AccessoryShop() {
   const topUpConfigured = Boolean(COIN_TOPUP_ADDRESS && PAYMENT_TOKEN_ADDRESS);
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 py-10">
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6 py-10">
       <div className="text-center">
         <PageTitle>Аксессуары</PageTitle>
         <p className="mt-2 text-sm text-neutral-400">
@@ -144,10 +152,29 @@ export function AccessoryShop() {
         {topUpError && <p className="text-xs text-rose-400">{topUpError}</p>}
       </Card>
 
+      <div className="flex flex-wrap gap-2" data-testid="category-filters">
+        {CATEGORY_FILTERS.map((filter) => (
+          <button
+            key={filter.value}
+            onClick={() => setCategoryFilter(filter.value)}
+            data-testid={`category-filter-${filter.value}`}
+            className={`rounded-full border px-3.5 py-1.5 text-xs font-medium transition ${
+              categoryFilter === filter.value
+                ? "border-fuchsia-400/60 bg-fuchsia-500/15 text-fuchsia-200"
+                : "border-white/10 text-neutral-400 hover:border-white/20 hover:text-white"
+            }`}
+          >
+            {filter.label}
+          </button>
+        ))}
+      </div>
+
       {CHARACTERS.map((character) => {
         // Registration-gift items aren't sold here — they're granted once
         // by activating the free subscription tier (see SubscriptionTiers).
-        const items = accessoriesFor(character.id).filter((a) => !a.isRegistrationGift);
+        const items = accessoriesFor(character.id).filter(
+          (a) => !a.isRegistrationGift && (categoryFilter === "all" || a.category === categoryFilter)
+        );
         if (items.length === 0) return null;
         return (
           <div key={character.id}>
@@ -166,7 +193,7 @@ export function AccessoryShop() {
                 return (
                   <Tile key={item.id} className="flex flex-col gap-2">
                     <span
-                      className="h-12 w-full rounded-xl"
+                      className="h-36 w-full rounded-xl"
                       style={{ backgroundColor: item.color }}
                     />
                     <p className="text-sm font-medium text-white">{item.name}</p>

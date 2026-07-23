@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { GameOverride } from "../games/registry";
+import type { EmployeeRole } from "../admin/roles";
 
 // Server-side source of truth for shop state — coin balances, which
 // on-chain top-up transactions have already been credited (idempotency
@@ -30,7 +31,15 @@ type CoinTopUpLogEntry = {
   ledgerKey: string; // `${txHash}:${logIndex}`
 };
 
-type GrantedAdmin = { addedBy: string; addedAt: number; label: string };
+// `role` is optional on the stored shape because entries persisted before
+// roles existed won't have it — everywhere that reads a GrantedAdmin falls
+// back to "support" (see roleOf below), never silently upgrading a legacy
+// entry to "owner".
+type GrantedAdmin = { addedBy: string; addedAt: number; label: string; role?: EmployeeRole };
+
+function roleOf(g: GrantedAdmin): EmployeeRole {
+  return g.role ?? "support";
+}
 
 type ShopState = {
   balances: Record<string, number>; // lowercased address -> coin balance
@@ -465,39 +474,81 @@ export async function listCoinTopUpLog(limit = 100): Promise<CoinTopUpLogEntry[]
   });
 }
 
-export async function isGrantedAdmin(address: string): Promise<boolean> {
+// Returns the employee's role if they were granted admin through the UI,
+// null otherwise. Doesn't know about the seed list in lib/admin.ts — that's
+// resolved separately in requireAdminSession, which always treats seed
+// addresses as "owner" regardless of what's in this store.
+export async function getGrantedAdminRole(address: string): Promise<EmployeeRole | null> {
   return enqueue(async () => {
     const state = await load();
-    return Boolean(state.grantedAdmins[key(address)]);
+    const g = state.grantedAdmins[key(address)];
+    return g ? roleOf(g) : null;
   });
 }
 
-export type GrantedAdminEntry = { address: string; addedBy: string; addedAt: number; label: string };
+export type GrantedAdminEntry = {
+  address: string;
+  addedBy: string;
+  addedAt: number;
+  label: string;
+  role: EmployeeRole;
+};
 
 export async function listGrantedAdmins(): Promise<GrantedAdminEntry[]> {
   return enqueue(async () => {
     const state = await load();
-    return Object.entries(state.grantedAdmins).map(([address, g]) => ({ address, ...g }));
+    return Object.entries(state.grantedAdmins).map(([address, g]) => ({
+      address,
+      ...g,
+      role: roleOf(g),
+    }));
   });
 }
 
 export async function addGrantedAdmin(
   actingAdmin: string,
   address: string,
-  label: string
+  label: string,
+  role: EmployeeRole
 ): Promise<void> {
   return enqueue(async () => {
     const state = await load();
     const k = key(address);
-    state.grantedAdmins[k] = { addedBy: key(actingAdmin), addedAt: Date.now(), label };
+    state.grantedAdmins[k] = { addedBy: key(actingAdmin), addedAt: Date.now(), label, role };
     pushAdminLog(state, {
       at: Date.now(),
       admin: key(actingAdmin),
       action: "add-employee",
       address: k,
-      detail: label,
+      detail: `${label} (${role})`,
     });
     await persist(state);
+  });
+}
+
+// Changes an existing employee's role. Only meaningful for UI-granted
+// employees — seed admins (lib/admin.ts) aren't in this store at all and
+// are always "owner", so there's nothing here to change for them.
+export async function setGrantedAdminRole(
+  actingAdmin: string,
+  address: string,
+  role: EmployeeRole
+): Promise<boolean> {
+  return enqueue(async () => {
+    const state = await load();
+    const k = key(address);
+    const existing = state.grantedAdmins[k];
+    if (!existing) return false;
+    existing.role = role;
+    pushAdminLog(state, {
+      at: Date.now(),
+      admin: key(actingAdmin),
+      action: "change-employee-role",
+      address: k,
+      detail: role,
+    });
+    await persist(state);
+    return true;
   });
 }
 

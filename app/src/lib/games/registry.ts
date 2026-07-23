@@ -58,12 +58,22 @@ export type PaceStage = {
   label: string;
 };
 
+// "free" games are the open pool shown under "Свободная игра" on a
+// character's page — playable any time, own default narrative (see
+// STORIES in games/stories.ts). "chapter" games exist ONLY to be pointed at
+// by a chapter's gameId (see lib/content) — never listed as free play, and
+// carry no narrative of their own (a chapter always supplies its own
+// independent story). Structural, like id/implementIds/mechanic — not
+// something an admin patch should move between pools (see GameOverride).
+export type GameType = "free" | "chapter";
+
 export type GameDefinition = {
   id: string;
   title: string;
   tagline: string;
   description: string;
   status: GameStatus;
+  type: GameType;
   characterLabel: string;
   implementIds: string[];
   maxHeat: number;
@@ -238,6 +248,7 @@ export const GAMES: GameDefinition[] = [
     tagline: "Базовый темп",
     description: "Стандартный набор орудий, ровный набор нагрева — опорная версия для сравнения с остальными.",
     status: "available",
+    type: "free",
     characterLabel: "Персонаж A (заглушка)",
     implementIds: ["hand", "ruler", "paddle"],
     maxHeat: 100,
@@ -249,6 +260,7 @@ export const GAMES: GameDefinition[] = [
     tagline: "Долгая сессия",
     description: "Нагрев растёт медленнее, зато доступны все орудия — проверка на затяжной прогресс.",
     status: "available",
+    type: "free",
     characterLabel: "Персонаж B (заглушка)",
     implementIds: ["hand", "ruler", "paddle", "brush", "belt", "flogger", "cane", "riding-crop", "paddle-studded"],
     maxHeat: 140,
@@ -260,6 +272,7 @@ export const GAMES: GameDefinition[] = [
     tagline: "Только рука",
     description: "Один инструмент, высокий нагрев за касание — проверка короткой, «на пару минут», сессии.",
     status: "available",
+    type: "free",
     characterLabel: "Персонаж C (заглушка)",
     implementIds: ["hand"],
     maxHeat: 60,
@@ -272,6 +285,7 @@ export const GAMES: GameDefinition[] = [
     description:
       "Энергия и нагрев зависят от темпа: чем чаще шлепаете, тем дороже каждое действие, но и эффект сильнее. Персонаж отдельно реагирует на скорость, а не только на счётчик.",
     status: "available",
+    type: "free",
     characterLabel: "Персонаж D (заглушка)",
     implementIds: ["hand", "belt", "flogger", "cane", "riding-crop", "paddle-studded"],
     maxHeat: 100,
@@ -281,9 +295,9 @@ export const GAMES: GameDefinition[] = [
   // unlocked" coverage for Ада — needed so the low-tolerance gate
   // (submission<25 blocks purchase-tier, see isImplementBlocked) and the
   // tolerance-mismatch math actually have somewhere to fire; her other two
-  // games never expose an intense-tier implement at all. Visible in free
-  // play now; not wired into chapters.ts, so they stay ungated until the
-  // narrative team decides whether/how to fold them into the novel.
+  // games never expose an intense-tier implement at all. Free-play only —
+  // chapters get their own dedicated "chapter"-type games below instead of
+  // borrowing these directly (see lib/content).
   {
     id: "pilot-e",
     title: "Пилот E — Полное доверие",
@@ -291,6 +305,7 @@ export const GAMES: GameDefinition[] = [
     description:
       "Доступны все орудия сразу — проверка полного диапазона для персонажа с низкой толерантностью, а не только её обычного gentle/moderate набора.",
     status: "available",
+    type: "free",
     characterLabel: "Персонаж E (заглушка)",
     implementIds: ["hand", "ruler", "paddle", "brush", "belt", "flogger", "cane", "riding-crop", "paddle-studded"],
     maxHeat: 140,
@@ -303,9 +318,140 @@ export const GAMES: GameDefinition[] = [
     description:
       "Полный набор орудий на механике по темпу — проверка, как персонаж с низкой толерантностью держит нарастающий ритм, а не только фиксированную нагрузку.",
     status: "available",
+    type: "free",
     characterLabel: "Персонаж F (заглушка)",
     implementIds: ["hand", "ruler", "paddle", "brush", "belt", "flogger", "cane", "riding-crop", "paddle-studded"],
     maxHeat: 100,
+    mechanic: "rate",
+  },
+  // Same "full-roster, own pace" pair for Ада as pilot-e/pilot-f are for
+  // Рин. Free-play only, same reasoning as above.
+  {
+    id: "pilot-g",
+    title: "Пилот G — Без экзамена",
+    tagline: "Полное доверие",
+    description:
+      "Тот же полный набор орудий, что и в «Дисциплине», но без проверки — нагрев чуть выше прежнего предела, потому что на этот раз никто не сдерживается из принципа.",
+    status: "available",
+    type: "free",
+    characterLabel: "Персонаж G (заглушка)",
+    implementIds: ["hand", "ruler", "paddle", "brush", "belt", "flogger", "cane", "riding-crop", "paddle-studded"],
+    maxHeat: 160,
+    mechanic: "fixed",
+  },
+  {
+    id: "pilot-h",
+    title: "Пилот H — Без брони",
+    tagline: "Свой темп, без счёта",
+    description: "Полный набор на механике по темпу — темп в этот раз держит она сама, и не для того, чтобы что-то доказать.",
+    status: "available",
+    type: "free",
+    characterLabel: "Персонаж H (заглушка)",
+    implementIds: ["hand", "ruler", "paddle", "brush", "belt", "flogger", "cane", "riding-crop", "paddle-studded"],
+    maxHeat: 120,
+    mechanic: "rate",
+  },
+
+  // Dedicated placeholder games for story mode — one per chapter (4 per
+  // character), never shown under "Свободная игра" (see CharacterPage.tsx's
+  // type === "free" filter). Each mirrors the maxHeat/mechanic/implementIds
+  // of the free-play pilot the chapter used to borrow directly, so existing
+  // balance carries over; only title/tagline/description are placeholders
+  // pending real chapter-specific content.
+  {
+    id: "chapter-rin-1",
+    title: "Глава 1 — Рин (заглушка)",
+    tagline: "Плейсхолдер главы",
+    description: "Заглушка под первую главу Рин — заменить на реальный контент.",
+    status: "available",
+    type: "chapter",
+    characterLabel: "Рин",
+    implementIds: ["hand", "ruler", "paddle"],
+    maxHeat: 100,
+    mechanic: "fixed",
+  },
+  {
+    id: "chapter-rin-2",
+    title: "Глава 2 — Рин (заглушка)",
+    tagline: "Плейсхолдер главы",
+    description: "Заглушка под вторую главу Рин — заменить на реальный контент.",
+    status: "available",
+    type: "chapter",
+    characterLabel: "Рин",
+    implementIds: ["hand"],
+    maxHeat: 60,
+    mechanic: "fixed",
+  },
+  {
+    id: "chapter-rin-3",
+    title: "Глава 3 — Рин (заглушка)",
+    tagline: "Плейсхолдер главы",
+    description: "Заглушка под третью главу Рин — заменить на реальный контент.",
+    status: "available",
+    type: "chapter",
+    characterLabel: "Рин",
+    implementIds: ["hand", "ruler", "paddle", "brush", "belt", "flogger", "cane", "riding-crop", "paddle-studded"],
+    maxHeat: 140,
+    mechanic: "fixed",
+  },
+  {
+    id: "chapter-rin-4",
+    title: "Глава 4 — Рин (заглушка)",
+    tagline: "Плейсхолдер главы",
+    description: "Заглушка под четвёртую главу Рин — заменить на реальный контент.",
+    status: "available",
+    type: "chapter",
+    characterLabel: "Рин",
+    implementIds: ["hand", "ruler", "paddle", "brush", "belt", "flogger", "cane", "riding-crop", "paddle-studded"],
+    maxHeat: 100,
+    mechanic: "rate",
+  },
+  {
+    id: "chapter-ada-1",
+    title: "Глава 1 — Ада (заглушка)",
+    tagline: "Плейсхолдер главы",
+    description: "Заглушка под первую главу Ады — заменить на реальный контент.",
+    status: "available",
+    type: "chapter",
+    characterLabel: "Ада",
+    implementIds: ["hand", "belt", "flogger", "cane", "riding-crop", "paddle-studded"],
+    maxHeat: 100,
+    mechanic: "rate",
+  },
+  {
+    id: "chapter-ada-2",
+    title: "Глава 2 — Ада (заглушка)",
+    tagline: "Плейсхолдер главы",
+    description: "Заглушка под вторую главу Ады — заменить на реальный контент.",
+    status: "available",
+    type: "chapter",
+    characterLabel: "Ада",
+    implementIds: ["hand", "ruler", "paddle", "brush", "belt", "flogger", "cane", "riding-crop", "paddle-studded"],
+    maxHeat: 140,
+    mechanic: "fixed",
+  },
+  {
+    id: "chapter-ada-3",
+    title: "Глава 3 — Ада (заглушка)",
+    tagline: "Плейсхолдер главы",
+    description: "Заглушка под третью главу Ады — заменить на реальный контент.",
+    status: "available",
+    type: "chapter",
+    characterLabel: "Ада",
+    implementIds: ["hand", "ruler", "paddle", "brush", "belt", "flogger", "cane", "riding-crop", "paddle-studded"],
+    maxHeat: 160,
+    mechanic: "fixed",
+  },
+  {
+    id: "chapter-ada-4",
+    title: "Глава 4 — Ада (заглушка)",
+    tagline: "Плейсхолдер главы",
+    description: "Заглушка под четвёртую главу Ады — заменить на реальный контент.",
+    status: "available",
+    type: "chapter",
+    characterLabel: "Ада",
+    implementIds: ["hand", "ruler", "paddle", "brush", "belt", "flogger", "cane", "riding-crop", "paddle-studded"],
+    maxHeat: 120,
     mechanic: "rate",
   },
 ];
