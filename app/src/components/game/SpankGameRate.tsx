@@ -143,6 +143,9 @@ export function SpankGameRate({
     }
   }, [introDialogue, phase]);
   const [finaleBeat, setFinaleBeat] = useState<StoryBeat | null>(null);
+  // See the matching comment in SpankGame.tsx — reveals the finale text,
+  // teaser, and decision prompt one at a time instead of all at once.
+  const [finaleStep, setFinaleStep] = useState(0);
   const [pickedOptionId, setPickedOptionId] = useState<string | null>(null);
   // See the matching comment in SpankGame.tsx.
   const [epilogueDone, setEpilogueDone] = useState(false);
@@ -318,11 +321,23 @@ export function SpankGameRate({
     setBand(randomPaceBand());
     setInBandFlash(false);
     setPickedOptionId(null);
+    setFinaleStep(0);
     setEpilogueDone(false);
     setPhase("playing");
   }
 
   const heatPercent = (heat / game.maxHeat) * 100;
+
+  // See the matching comment in SpankGame.tsx.
+  const finaleStepKinds: ("beat" | "teaser" | "decision")[] = [
+    "beat",
+    ...(nextTeaser ? (["teaser"] as const) : []),
+    ...(decision ? (["decision"] as const) : []),
+  ];
+  const currentFinaleStep = finaleStepKinds[Math.min(finaleStep, finaleStepKinds.length - 1)];
+  const isLastFinaleStep = finaleStep >= finaleStepKinds.length - 1;
+  const finaleReadyToContinue =
+    isLastFinaleStep && (currentFinaleStep !== "decision" || pickedOptionId !== null);
 
   return (
     <div className="relative flex w-full min-h-0 flex-1 flex-col lg:flex-row">
@@ -538,29 +553,31 @@ export function SpankGameRate({
       {phase === "finale" && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/70 p-6 backdrop-blur-sm">
           <Card size="lg" className="max-w-md text-center">
-            {finaleBeat?.image && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={finaleBeat.image}
-                alt=""
-                className="mb-3 h-40 w-full rounded-xl object-cover"
-              />
+            {currentFinaleStep === "beat" && (
+              <>
+                {finaleBeat?.image && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={finaleBeat.image}
+                    alt=""
+                    className="mb-3 h-40 w-full rounded-xl object-cover"
+                  />
+                )}
+                <SectionHeading dense>Кульминация</SectionHeading>
+                <p className="mt-3 text-sm leading-relaxed text-neutral-200" data-testid="story-finale">
+                  {finaleBeat?.text}
+                </p>
+              </>
             )}
-            <SectionHeading dense>Кульминация</SectionHeading>
-            <p className="mt-3 text-sm leading-relaxed text-neutral-200" data-testid="story-finale">
-              {finaleBeat?.text}
-            </p>
-            {nextTeaser && (
-              <p
-                className="mt-4 border-t border-white/10 pt-4 text-sm italic leading-relaxed text-indigo-200"
-                data-testid="next-teaser"
-              >
+
+            {currentFinaleStep === "teaser" && (
+              <p className="text-sm italic leading-relaxed text-indigo-200" data-testid="next-teaser">
                 {nextTeaser}
               </p>
             )}
 
-            {decision && (
-              <div className="mt-4 border-t border-white/10 pt-4">
+            {currentFinaleStep === "decision" && decision && (
+              <>
                 {pickedOptionId === null ? (
                   <>
                     <p className="text-sm leading-relaxed text-neutral-200" data-testid="decision-prompt">
@@ -589,37 +606,52 @@ export function SpankGameRate({
                     {decision.options.find((o) => o.id === pickedOptionId)?.result.text}
                   </p>
                 )}
-              </div>
+              </>
             )}
 
-            <p className="mt-3 text-xs text-neutral-500">
-              Прогресс в «Отклике» уже сохранён.
-            </p>
-            {epilogueDialogue && !epilogueDone && (!decision || pickedOptionId !== null) ? (
+            {currentFinaleStep !== "decision" && !isLastFinaleStep && (
               <Button
-                onClick={() => setPhase("epilogue")}
-                data-testid="continue-to-epilogue-button"
+                onClick={() => setFinaleStep((s) => s + 1)}
+                data-testid="finale-advance-button"
                 size="lg"
                 className="mt-5"
               >
-                Продолжить →
+                Далее →
               </Button>
-            ) : (
-              <div className="mt-5 flex flex-col gap-2">
-                {onFinishChapter && (
-                  <Button onClick={onFinishChapter} data-testid="finish-chapter-button" size="lg">
-                    Дальше →
+            )}
+
+            {finaleReadyToContinue && (
+              <>
+                <p className="mt-3 text-xs text-neutral-500">
+                  Прогресс в «Отклике» уже сохранён.
+                </p>
+                {epilogueDialogue && !epilogueDone ? (
+                  <Button
+                    onClick={() => setPhase("epilogue")}
+                    data-testid="continue-to-epilogue-button"
+                    size="lg"
+                    className="mt-5"
+                  >
+                    Продолжить →
                   </Button>
+                ) : (
+                  <div className="mt-5 flex flex-col gap-2">
+                    {onFinishChapter && (
+                      <Button onClick={onFinishChapter} data-testid="finish-chapter-button" size="lg">
+                        Дальше →
+                      </Button>
+                    )}
+                    <Button
+                      onClick={handleNewRound}
+                      data-testid="new-round-button"
+                      size="lg"
+                      variant={onFinishChapter ? "secondary" : "primary"}
+                    >
+                      Новый раунд
+                    </Button>
+                  </div>
                 )}
-                <Button
-                  onClick={handleNewRound}
-                  data-testid="new-round-button"
-                  size="lg"
-                  variant={onFinishChapter ? "secondary" : "primary"}
-                >
-                  Новый раунд
-                </Button>
-              </div>
+              </>
             )}
           </Card>
         </div>

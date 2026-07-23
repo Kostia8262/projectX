@@ -173,6 +173,12 @@ export function SpankGameAim({
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [timeLeftMs, setTimeLeftMs] = useState(ROUND_DURATION_MS);
   const finishedRef = useRef(false);
+  // Always points at the CURRENT render's finishRound (closing over this
+  // render's precision/selected/traits) — the countdown timer below reads
+  // through this ref instead of calling finishRound directly, since its own
+  // effect only re-subscribes on `phase` and would otherwise fire a
+  // finishRound frozen from the very start of the round (precision still 0).
+  const finishRoundRef = useRef<() => void>(() => {});
 
   const hitStreakRef = useRef(0);
   const lastImplementRef = useRef<string | null>(null);
@@ -216,11 +222,9 @@ export function SpankGameAim({
       const elapsed = performance.now() - roundStartRef.current;
       const left = Math.max(0, ROUND_DURATION_MS - elapsed);
       setTimeLeftMs(left);
-      if (left <= 0) finishRound();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
+      if (left <= 0) finishRoundRef.current();
     }, TICK_MS);
     return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
 
   useEffect(() => {
@@ -241,7 +245,11 @@ export function SpankGameAim({
     if (finishedRef.current) return;
     finishedRef.current = true;
 
-    const success = zoneTapsRef.current >= MIN_TAPS_FOR_SUCCESS && precision >= SUCCESS_PRECISION;
+    // Recomputed fresh from the refs (not the `precision` closure variable)
+    // so this always reflects the actual final tally, however long ago this
+    // particular closure was created — see finishRoundRef above.
+    const finalPrecision = zoneTapsRef.current > 0 ? zoneHitsRef.current / zoneTapsRef.current : 0;
+    const success = zoneTapsRef.current >= MIN_TAPS_FOR_SUCCESS && finalPrecision >= SUCCESS_PRECISION;
     setFinaleBeat(success ? SUCCESS_BEAT : FAIL_BEAT);
 
     if (selected) {
@@ -257,6 +265,7 @@ export function SpankGameAim({
     playFinaleSound();
     setPhase(outroDialogue ? "dialogue-outro" : "finale");
   }
+  finishRoundRef.current = finishRound;
 
   function triggerFlinchLockout() {
     if (closedZone) return; // don't stack a second lockout while one's active
@@ -332,7 +341,9 @@ export function SpankGameAim({
     zoneTapsRef.current = 0;
     hitStreakRef.current = 0;
     sameImplementStreakRef.current = 0;
-    lastImplementRef.current = selected?.id ?? null;
+    // Not pre-seeded to the current selection — the first tap of a round
+    // should never register as a "repeat" of nothing.
+    lastImplementRef.current = null;
     flinchRef.current = traits?.defiance ?? 0;
     if (closedZoneTimerRef.current) clearTimeout(closedZoneTimerRef.current);
     setClosedZone(null);
@@ -360,7 +371,7 @@ export function SpankGameAim({
           </PageTitle>
         </div>
 
-        <div className="relative flex-1">
+        <div className="relative flex flex-1">
           <CharacterStage
             color={stage.color}
             label={phase === "finale" ? "Кульминация" : stage.label}

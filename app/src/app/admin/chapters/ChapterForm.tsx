@@ -680,6 +680,11 @@ export function ChapterForm({
 
         <div className="flex flex-col gap-2 sm:col-span-2">
           <label className="text-xs text-neutral-400">Тизер следующей главы</label>
+          <p className="text-xs text-neutral-500">
+            В финальной модалке показывается отдельным шагом — после текста финала и до развилки
+            (если она есть), с кнопкой «Далее». Пишите его как самостоятельную реплику, а не
+            продолжение финала.
+          </p>
           <textarea
             value={form.nextTeaser}
             onChange={(e) => setForm({ ...form, nextTeaser: e.target.value })}
@@ -926,6 +931,10 @@ export function ChapterForm({
           />
           У этой главы есть развилка
         </label>
+        <p className="mt-1 text-xs text-neutral-500">
+          Тоже отдельный шаг финальной модалки — открывается последним, после текста финала и
+          тизера. Реплика перед выбором должна работать сама по себе, без опоры на предыдущие шаги.
+        </p>
         {form.decisionEnabled && (
           <div className="mt-3 flex flex-col gap-3">
             <div>
