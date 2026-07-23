@@ -250,7 +250,7 @@ export function getImplement(implementId: string): Implement | undefined {
 export const GAMES: GameDefinition[] = [
   {
     id: "pilot-a",
-    title: "Пилот A — Знакомство",
+    title: "Пилот A — Знакомство: наощупь",
     tagline: "Она подсказывает, куда",
     description: "Она чуть двигается — цель смещается между заходами, попадите точно, а не куда попало.",
     status: "available",
@@ -274,7 +274,7 @@ export const GAMES: GameDefinition[] = [
   },
   {
     id: "pilot-c",
-    title: "Пилот C — Быстрый раунд",
+    title: "Пилот C — Быстрый раунд: в такт",
     tagline: "Поймайте момент",
     description: "Один инструмент, но точный момент важнее силы — попадите в нужную фазу, а не куда попало.",
     status: "available",
@@ -306,7 +306,7 @@ export const GAMES: GameDefinition[] = [
   // borrowing these directly (see lib/content).
   {
     id: "pilot-e",
-    title: "Пилот E — Полное доверие",
+    title: "Пилот E — Полное доверие: слово в слово",
     tagline: "Запомните, что она просит",
     description:
       "Она называет порядок орудий один раз — воссоздайте его в точности. Ошиблись — начинайте заново.",
@@ -319,7 +319,7 @@ export const GAMES: GameDefinition[] = [
   },
   {
     id: "pilot-f",
-    title: "Пилот F — Не сбавляя темп",
+    title: "Пилот F — Не сбавляя темп: её ритм",
     tagline: "Держите её темп, не свой",
     description:
       "Она хочет конкретную скорость, не «максимальную» — цель на шкале темпа время от времени смещается, попадание в неё выгоднее слепой спешки.",
