@@ -124,10 +124,18 @@ export function SpankGameRate({
   const [heat, setHeat] = useState(0);
   const [phase, setPhase] = useState<Phase>(() => (introDialogue ? "dialogue-intro" : "intro"));
   // Guards against a race on cold/refreshed loads — see the matching
-  // comment in SpankGame.tsx.
+  // comment in SpankGame.tsx. `hadIntroDialogueAtMountRef` is what keeps
+  // this from re-firing (and looping the scene) once the player finishes
+  // the dialogue normally and phase legitimately becomes "intro".
+  const hadIntroDialogueAtMountRef = useRef(introDialogue !== undefined);
   const dialogueIntroCaughtUpRef = useRef(false);
   useEffect(() => {
-    if (introDialogue && phase === "intro" && !dialogueIntroCaughtUpRef.current) {
+    if (
+      !hadIntroDialogueAtMountRef.current &&
+      introDialogue &&
+      phase === "intro" &&
+      !dialogueIntroCaughtUpRef.current
+    ) {
       dialogueIntroCaughtUpRef.current = true;
       setPhase("dialogue-intro");
     }

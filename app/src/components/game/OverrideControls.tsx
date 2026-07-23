@@ -58,13 +58,14 @@ export function OverrideControls({
               ? `Карт-бланш активен — осталось раундов: ${state.roundsRemaining}`
               : `Карт-бланш: ${CARTE_BLANCHE_ROUNDS} раунда без ограничений — ${CARTE_BLANCHE_PRICE} монет`
           }
-          className={`flex h-9 w-9 items-center justify-center rounded-xl border text-base font-semibold transition ${
+          className={`flex flex-col items-center gap-1 rounded-xl border px-3 py-2 text-base font-semibold transition ${
             active
               ? "cursor-not-allowed border-white/20 bg-fuchsia-500/20 text-fuchsia-200"
               : "border-white/10 bg-gradient-to-br from-fuchsia-500/20 to-indigo-500/20 text-fuchsia-200 hover:border-white/30 disabled:opacity-50"
           }`}
         >
           {carteBlanche.isPending ? "…" : "∞"}
+          <span className="text-[10px] font-medium leading-none text-fuchsia-200/80">Карт-бланш</span>
         </button>
 
         {recovering && (
@@ -73,9 +74,10 @@ export function OverrideControls({
             disabled={aftercare.isPending}
             data-testid="buy-aftercare"
             title={`Забота: снять восстановление и часть последствий — ${AFTERCARE_PRICE} монет`}
-            className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-gradient-to-br from-rose-500/20 to-amber-500/20 text-rose-200 transition hover:border-white/30 disabled:opacity-50"
+            className="flex flex-col items-center gap-1 rounded-xl border border-white/10 bg-gradient-to-br from-rose-500/20 to-amber-500/20 px-3 py-2 text-rose-200 transition hover:border-white/30 disabled:opacity-50"
           >
             {aftercare.isPending ? "…" : "♥"}
+            <span className="text-[10px] font-medium leading-none text-rose-200/80">Забота</span>
           </button>
         )}
       </div>

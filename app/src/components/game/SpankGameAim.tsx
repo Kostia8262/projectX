@@ -4,8 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useEnergyContext } from "@/contexts/EnergyContext";
 import { useEnergyRefill } from "@/hooks/useEnergyRefill";
 import { HEAT_STAGES, implementsFor, stageForHeat, type GameDefinition } from "@/lib/games/registry";
-import { STORIES, resolveStoryVariant, type GameStory, type StoryBeat } from "@/lib/games/stories";
-import { classifySessionQuality, type TapOutcome } from "@/lib/games/sessionQuality";
+import { STORIES, type GameStory, type StoryBeat } from "@/lib/games/stories";
 import { playTapSound, playReactionSound, playFinaleSound } from "@/lib/sound";
 import { CharacterStage } from "@/components/game/CharacterStage";
 import { OverrideControls } from "@/components/game/OverrideControls";
@@ -17,34 +16,25 @@ import { Button } from "@/components/ui/Button";
 import { applyRoundToCharacter } from "@/lib/characters/roundHook";
 import { getCharacterForGame } from "@/lib/characters/registry";
 import { isOverrideActive, type OverrideState } from "@/lib/characters/override";
-import { loadFreshness, loadOverride, loadTraits } from "@/lib/characters/storage";
+import { loadFreshness, loadOverride, loadTraits, saveTraits } from "@/lib/characters/storage";
 import { recordBranchChoice } from "@/lib/characters/branch";
 import type { ChapterDecision, ChapterHints, DialogueTree } from "@/lib/content/types";
 import {
-  classifyIntensity,
+  applyAimFailPenalty,
+  applyAimSuccessBonus,
   freshnessCharge,
   implementBlockReason,
   IMPLEMENT_BLOCK_MESSAGES,
-  matchesTolerance,
-  moodTag,
   type FreshnessState,
   type TraitState,
 } from "@/lib/characters/traits";
 
-function heatLifetimeKey(address: string, gameId: string) {
-  return `kink-spank-heat-lifetime-${gameId}-${address.toLowerCase()}`;
-}
-
-function loadLifetimeHeat(address: string, gameId: string): number {
-  if (typeof window === "undefined") return 0;
-  return Number(window.localStorage.getItem(heatLifetimeKey(address, gameId)) ?? "0") || 0;
-}
-
 // She shifts between these three positions on her own timer — landing a hit
 // on whichever one she's CURRENTLY in is the whole game; the other two are
 // still clickable (so a wrong guess costs a real, immediate tap), just far
-// less effective. Plain labelled buttons for now — see the ZoneButton style
-// below for where real art/animation would replace the placeholder.
+// less effective. Clicked directly on her portrait (three equal columns
+// overlaid on CharacterStage) rather than as separate buttons off to the
+// side — see the zone overlay in the JSX below.
 type ZoneId = "left" | "center" | "right";
 const ZONES: { id: ZoneId; label: string }[] = [
   { id: "left", label: "Левее" },
@@ -53,16 +43,37 @@ const ZONES: { id: ZoneId; label: string }[] = [
 ];
 
 const ZONE_SWITCH_MS = 1700;
-// A matched zone is a real bonus over a flat tap, not just "avoid the
-// penalty" — a mismatched one still lands (she doesn't vanish if you guess
-// wrong), just a lot weaker, so guessing wrong stings without ever fully
-// wasting the tap/energy spent on it.
 const ZONE_HIT_MULTIPLIER = 1.15;
 const ZONE_MISS_MULTIPLIER = 0.45;
 
 function randomZone(exclude?: ZoneId): ZoneId {
   const options = ZONES.map((z) => z.id).filter((id) => id !== exclude);
   return options[Math.floor(Math.random() * options.length)] ?? ZONES[0].id;
+}
+
+// The round is a fixed 60-second skill check, not a race to a heat total —
+// precision (hits / taps) at the buzzer decides which of the two finale
+// texts plays and which trait function fires (traits.ts). A minimum tap
+// count keeps a lucky single tap from counting as a "pass".
+const ROUND_DURATION_MS = 60_000;
+const SUCCESS_PRECISION = 0.65;
+const MIN_TAPS_FOR_SUCCESS = 8;
+const TICK_MS = 200;
+
+const SUCCESS_BEAT: StoryBeat = {
+  text: "Она сама не заметила, как перестала следить за тем, куда именно вы метите — просто расслабилась и позволила руке, которая ни разу не промахнулась, вести дальше.",
+};
+const FAIL_BEAT: StoryBeat = {
+  text: "Она честно пыталась угадать, куда вы метите в следующий раз — и почти всегда оказывалась не там. К концу минуты уже сама смеётся над тем, как редко вы сходились.",
+};
+
+function heatLifetimeKey(address: string, gameId: string) {
+  return `kink-spank-heat-lifetime-${gameId}-${address.toLowerCase()}`;
+}
+
+function loadLifetimeHeat(address: string, gameId: string): number {
+  if (typeof window === "undefined") return 0;
+  return Number(window.localStorage.getItem(heatLifetimeKey(address, gameId)) ?? "0") || 0;
 }
 
 type Phase = "dialogue-intro" | "intro" | "playing" | "dialogue-outro" | "finale";
@@ -92,9 +103,8 @@ export function SpankGameAim({
   outroDialogue?: DialogueTree;
   onFinishChapter?: () => void;
 }) {
-  const { energy, max, spend } = useEnergyContext();
+  const { energy, spend } = useEnergyContext();
   const energyRefill = useEnergyRefill();
-  const [heat, setHeat] = useState(0);
   const [phase, setPhase] = useState<Phase>(() => (introDialogue ? "dialogue-intro" : "intro"));
   const [finaleBeat, setFinaleBeat] = useState<StoryBeat | null>(null);
   const [pickedOptionId, setPickedOptionId] = useState<string | null>(null);
@@ -115,8 +125,6 @@ export function SpankGameAim({
   const lifetimeRef = useRef(loadLifetimeHeat(address, game.id));
   const stageRef = useRef(stageForHeat(0));
   const roundStartRef = useRef(performance.now());
-  const heatRef = useRef(0);
-  const tapLogRef = useRef<TapOutcome[]>([]);
   const [pulseKey, setPulseKey] = useState(0);
   const story = storyOverride ?? STORIES[game.id];
   const { text: hintText, visible: hintVisible, triggerStage, triggerBlocked } = useCharacterHint(hints);
@@ -126,9 +134,10 @@ export function SpankGameAim({
   const zoneHitsRef = useRef(0);
   const zoneTapsRef = useRef(0);
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [timeLeftMs, setTimeLeftMs] = useState(ROUND_DURATION_MS);
+  const finishedRef = useRef(false);
 
-  // Only cycles while a round is actually being played — no point drifting
-  // during the intro card or the finale modal.
+  // Zone cycling — only while the round is actually running.
   useEffect(() => {
     if (phase !== "playing") return;
     const id = setInterval(() => {
@@ -137,32 +146,65 @@ export function SpankGameAim({
     return () => clearInterval(id);
   }, [phase]);
 
+  // The 60-second countdown itself — ticks off elapsed real time rather
+  // than a fixed decrement, so background-tab throttling can't stretch the
+  // round out past a minute.
+  useEffect(() => {
+    if (phase !== "playing") return;
+    const id = setInterval(() => {
+      const elapsed = performance.now() - roundStartRef.current;
+      const left = Math.max(0, ROUND_DURATION_MS - elapsed);
+      setTimeLeftMs(left);
+      if (left <= 0) finishRound();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, TICK_MS);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
+
   useEffect(() => {
     return () => {
       if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
     };
   }, []);
 
-  const stage = stageForHeat((heat / game.maxHeat) * 100);
   const outOfEnergy = energy <= 0;
+  const precision = zoneTapsRef.current > 0 ? zoneHitsRef.current / zoneTapsRef.current : 0;
+  // Her visible reaction tracks how well the round is going right now, not
+  // a heat total — same 5-tier palette as every other pilot, just fed by
+  // live precision instead of accumulated hits.
+  const stage = stageForHeat(precision * 100);
+
+  function finishRound() {
+    if (finishedRef.current) return;
+    finishedRef.current = true;
+
+    const success = zoneTapsRef.current >= MIN_TAPS_FOR_SUCCESS && precision >= SUCCESS_PRECISION;
+    setFinaleBeat(success ? SUCCESS_BEAT : FAIL_BEAT);
+
+    if (selected) {
+      applyRoundToCharacter(address, game.id, selected.id, 0, "neutral");
+    }
+    if (character && traits) {
+      const updated = success ? applyAimSuccessBonus(traits) : applyAimFailPenalty(traits);
+      saveTraits(address, character.id, updated);
+      setTraits(updated);
+      setOverrideState(loadOverride(address, character.id));
+      setFreshness(loadFreshness(address, character));
+    }
+    playFinaleSound();
+    setPhase(outroDialogue ? "dialogue-outro" : "finale");
+  }
 
   function handleZoneTap(zoneId: ZoneId) {
     if (!selected || outOfEnergy || phase !== "playing") return;
     if (traits && character && implementBlockReason(traits, character, selected, overriding)) {
-      tapLogRef.current.push({ implementId: selected.id, blocked: true, matched: false, resonant: false });
       triggerBlocked();
       return;
     }
     if (!spend(1)) return;
     playTapSound();
     setPulseKey((k) => k + 1);
-
-    tapLogRef.current.push({
-      implementId: selected.id,
-      blocked: false,
-      matched: character ? matchesTolerance(character, classifyIntensity(selected, 0)) : true,
-      resonant: character ? character.preferredImplementIds.includes(selected.id) : false,
-    });
 
     const isHit = zoneId === activeZone;
     zoneTapsRef.current += 1;
@@ -172,63 +214,34 @@ export function SpankGameAim({
     flashTimerRef.current = setTimeout(() => setLastZoneResult(null), 700);
 
     const gained = selected.heatPerHit * (isHit ? ZONE_HIT_MULTIPLIER : ZONE_MISS_MULTIPLIER);
-    const next = Math.min(game.maxHeat, heatRef.current + gained);
-    heatRef.current = next;
-    setHeat(next);
     lifetimeRef.current += gained;
     window.localStorage.setItem(heatLifetimeKey(address, game.id), String(lifetimeRef.current));
 
-    const nextStage = stageForHeat((next / game.maxHeat) * 100);
-    const stageChanged = nextStage.label !== stageRef.current.label;
-    if (stageChanged) {
+    const nextPrecision = zoneHitsRef.current / zoneTapsRef.current;
+    const nextStage = stageForHeat(nextPrecision * 100);
+    if (nextStage.label !== stageRef.current.label) {
       stageRef.current = nextStage;
       playReactionSound();
       triggerStage(HEAT_STAGES.indexOf(nextStage));
-      // A fresh position right after she reacted to a stage change reads as
-      // her shifting BECAUSE of what just landed, not on an arbitrary clock.
-      setActiveZone((current) => randomZone(current));
-    }
-
-    if (next >= game.maxHeat) {
-      const durationMs = performance.now() - roundStartRef.current;
-      const sessionQuality = classifySessionQuality(tapLogRef.current, implements_.length);
-      const mood = traits ? moodTag(traits) : undefined;
-      setFinaleBeat(
-        resolveStoryVariant(
-          story,
-          game.id,
-          { durationMs, implementId: selected.id, averagePace: 0 },
-          mood,
-          sessionQuality
-        )
-      );
-      applyRoundToCharacter(address, game.id, selected.id, 0, sessionQuality);
-      if (character) {
-        setTraits(loadTraits(address, character));
-        setOverrideState(loadOverride(address, character.id));
-        setFreshness(loadFreshness(address, character));
-      }
-      playFinaleSound();
-      setPhase(outroDialogue ? "dialogue-outro" : "finale");
     }
   }
 
   function handleNewRound() {
-    heatRef.current = 0;
-    setHeat(0);
     stageRef.current = stageForHeat(0);
     roundStartRef.current = performance.now();
-    tapLogRef.current = [];
     zoneHitsRef.current = 0;
     zoneTapsRef.current = 0;
+    finishedRef.current = false;
+    setTimeLeftMs(ROUND_DURATION_MS);
     setLastZoneResult(null);
     setActiveZone(randomZone());
     setPickedOptionId(null);
     setPhase("playing");
   }
 
-  const heatPercent = (heat / game.maxHeat) * 100;
-  const precision = zoneTapsRef.current > 0 ? Math.round((zoneHitsRef.current / zoneTapsRef.current) * 100) : null;
+  const precisionPercent = Math.round(precision * 100);
+  const secondsLeft = Math.ceil(timeLeftMs / 1000);
+  const timePercent = (timeLeftMs / ROUND_DURATION_MS) * 100;
 
   return (
     <div className="relative flex w-full min-h-0 flex-1 flex-col lg:flex-row">
@@ -241,69 +254,77 @@ export function SpankGameAim({
           </PageTitle>
         </div>
 
-        <CharacterStage
-          color={stage.color}
-          label={phase === "finale" ? "Кульминация" : stage.label}
-          caption={game.characterLabel}
-          pulseKey={pulseKey}
-        />
+        <div className="relative flex-1">
+          <CharacterStage
+            color={stage.color}
+            label={phase === "finale" ? "Кульминация" : stage.label}
+            caption={game.characterLabel}
+            pulseKey={pulseKey}
+          />
+
+          {phase === "playing" && (
+            <>
+              <div className="pointer-events-none absolute inset-0 flex">
+                {ZONES.map((zone) => (
+                  <button
+                    key={zone.id}
+                    onClick={() => handleZoneTap(zone.id)}
+                    disabled={outOfEnergy}
+                    data-testid={`aim-zone-${zone.id}`}
+                    aria-label={zone.label}
+                    className={`pointer-events-auto flex-1 border-white/5 transition first:border-r last:border-l disabled:cursor-not-allowed ${
+                      zone.id === activeZone
+                        ? "bg-fuchsia-500/10 ring-2 ring-inset ring-fuchsia-400/50"
+                        : "hover:bg-white/5"
+                    }`}
+                  />
+                ))}
+              </div>
+              <span className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-full border border-white/20 bg-black/60 px-3 py-1 text-xs font-medium text-white backdrop-blur">
+                Она здесь: {ZONES.find((z) => z.id === activeZone)?.label}
+              </span>
+              {lastZoneResult && (
+                <span
+                  className={`pointer-events-none absolute right-3 top-3 rounded-full border px-3 py-1 text-xs font-semibold backdrop-blur ${
+                    lastZoneResult === "hit"
+                      ? "border-emerald-400/40 bg-emerald-500/20 text-emerald-200"
+                      : "border-white/10 bg-black/50 text-neutral-400"
+                  }`}
+                  data-testid="aim-feedback"
+                >
+                  {lastZoneResult === "hit" ? "Точно!" : "Мимо…"}
+                </span>
+              )}
+            </>
+          )}
+        </div>
 
         <Card size="sm">
-          <div className="h-3 w-full overflow-hidden rounded-full bg-white/10">
+          <div className="flex items-center justify-between text-xs text-neutral-400">
+            <span>Осталось времени</span>
+            <span className="tabular-nums" data-testid="aim-timer">
+              {secondsLeft}с
+            </span>
+          </div>
+          <div className="mt-1 h-3 w-full overflow-hidden rounded-full bg-white/10">
             <div
-              className="h-full rounded-full transition-all duration-200"
-              style={{ width: `${heatPercent}%`, backgroundColor: stage.color }}
+              className="h-full rounded-full bg-indigo-400 transition-all duration-200"
+              style={{ width: `${timePercent}%` }}
             />
           </div>
-          <div className="mt-1 flex items-center justify-between">
+          <div className="mt-2 flex items-center justify-between">
             <p className="text-xs text-neutral-500">
-              {Math.round(heat)} / {game.maxHeat}
+              Нужно {Math.round(SUCCESS_PRECISION * 100)}% попаданий, чтобы она осталась довольна
             </p>
-            {precision !== null && (
-              <p className="text-xs text-neutral-500" data-testid="aim-precision">
-                Точность: {precision}%
-              </p>
-            )}
+            <p className="text-xs text-neutral-500" data-testid="aim-precision">
+              Точность: {precisionPercent}%
+            </p>
           </div>
         </Card>
       </div>
 
       <div className="flex w-full flex-col gap-4 border-t border-white/10 bg-white/[0.03] p-4 lg:w-80 lg:border-t-0 lg:border-l lg:p-6">
-        <div className="flex flex-col items-center gap-2">
-          <p className="text-xs text-neutral-500">
-            {phase === "playing" ? "Она сейчас здесь:" : "Цель появится в начале раунда"}
-          </p>
-          <div className="flex w-full gap-2">
-            {ZONES.map((zone) => {
-              const isActive = phase === "playing" && zone.id === activeZone;
-              return (
-                <button
-                  key={zone.id}
-                  onClick={() => handleZoneTap(zone.id)}
-                  disabled={outOfEnergy || phase !== "playing"}
-                  data-testid={`aim-zone-${zone.id}`}
-                  className={`flex-1 rounded-xl border py-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${
-                    isActive
-                      ? "border-fuchsia-400/60 bg-fuchsia-500/15 text-white shadow-[0_0_0_1px_rgba(232,121,249,0.4)]"
-                      : "border-white/10 bg-white/[0.02] text-neutral-400 hover:border-white/20"
-                  }`}
-                >
-                  {zone.label}
-                </button>
-              );
-            })}
-          </div>
-          {lastZoneResult && (
-            <p
-              className={`text-xs font-medium ${lastZoneResult === "hit" ? "text-emerald-400" : "text-neutral-500"}`}
-              data-testid="aim-feedback"
-            >
-              {lastZoneResult === "hit" ? "Точно!" : "Мимо…"}
-            </p>
-          )}
-        </div>
-
-        <div className="flex flex-wrap items-center justify-center gap-2">
+        <div className="grid grid-cols-1 gap-3">
           {implements_.map((impl) => {
             const reason = traits && character ? implementBlockReason(traits, character, impl, overriding) : null;
             const blocked = reason !== null;
@@ -315,7 +336,7 @@ export function SpankGameAim({
                 disabled={blocked}
                 data-testid={`implement-${impl.id}`}
                 title={reason ? IMPLEMENT_BLOCK_MESSAGES[reason] : undefined}
-                className={`flex h-16 w-20 flex-col items-center justify-center rounded-xl border text-xs font-medium transition ${
+                className={`flex items-center gap-3 rounded-xl border p-3 text-left transition ${
                   blocked
                     ? "cursor-not-allowed border-white/5 bg-white/[0.01] text-neutral-600 opacity-50"
                     : selectedId === impl.id
@@ -326,41 +347,41 @@ export function SpankGameAim({
                   boxShadow: !blocked && selectedId === impl.id ? `0 0 0 1px ${impl.color}` : undefined,
                 }}
               >
-                <span className="mb-1 h-3 w-3 rounded-sm" style={{ backgroundColor: impl.color }} />
-                {impl.name}
                 <span
-                  className="mt-1 h-1 w-10 overflow-hidden rounded-full bg-white/10"
-                  title={`Свежесть: ${Math.round(charge)}%`}
+                  className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg border border-dashed border-white/15 text-[10px] text-neutral-500"
+                  style={{ backgroundColor: `${impl.color}22` }}
                 >
+                  фото
+                </span>
+                <span className="flex flex-1 flex-col gap-1">
+                  <span className="text-sm font-medium">{impl.name}</span>
                   <span
-                    className="block h-full rounded-full transition-all"
-                    style={{ width: `${charge}%`, backgroundColor: impl.color }}
-                  />
+                    className="h-1 w-full overflow-hidden rounded-full bg-white/10"
+                    title={`Свежесть: ${Math.round(charge)}%`}
+                  >
+                    <span
+                      className="block h-full rounded-full transition-all"
+                      style={{ width: `${charge}%`, backgroundColor: impl.color }}
+                    />
+                  </span>
                 </span>
               </button>
             );
           })}
         </div>
 
-        <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2 text-sm">
-          <span className="text-neutral-400" data-testid="energy-readout">
-            Энергия: {energy}/{max}
-          </span>
-          {outOfEnergy && (
-            <Button
-              onClick={energyRefill.buyRefill}
-              disabled={energyRefill.pending}
-              data-testid="refill-button"
-              size="sm"
-            >
+        {outOfEnergy && (
+          <div className="flex flex-col gap-1 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2 text-sm">
+            <span className="text-neutral-400">Энергия закончилась</span>
+            <Button onClick={energyRefill.buyRefill} disabled={energyRefill.pending} data-testid="refill-button" size="sm">
               {energyRefill.pending ? "…" : `Пополнить (${energyRefill.cost} монет)`}
             </Button>
-          )}
-        </div>
-        {energyRefill.error && (
-          <p className="text-xs text-rose-400" data-testid="refill-error">
-            {energyRefill.error}
-          </p>
+            {energyRefill.error && (
+              <p className="text-xs text-rose-400" data-testid="refill-error">
+                {energyRefill.error}
+              </p>
+            )}
+          </div>
         )}
 
         {character && overrideState && (
@@ -408,7 +429,8 @@ export function SpankGameAim({
               {story.intro.text}
             </p>
             <p className="mt-3 text-xs text-neutral-500">
-              Она будет смещаться между тремя положениями — бейте туда, где она сейчас.
+              У вас минута. Она будет смещаться между тремя положениями — бейте туда, где она сейчас, и держите{" "}
+              {Math.round(SUCCESS_PRECISION * 100)}% точности.
             </p>
             <Button
               onClick={() => {
@@ -440,9 +462,7 @@ export function SpankGameAim({
             <p className="mt-3 text-sm leading-relaxed text-neutral-200" data-testid="story-finale">
               {finaleBeat?.text}
             </p>
-            {precision !== null && (
-              <p className="mt-2 text-xs text-neutral-500">Точность за раунд: {precision}%</p>
-            )}
+            <p className="mt-2 text-xs text-neutral-500">Точность за раунд: {precisionPercent}%</p>
             {nextTeaser && (
               <p
                 className="mt-4 border-t border-white/10 pt-4 text-sm italic leading-relaxed text-indigo-200"

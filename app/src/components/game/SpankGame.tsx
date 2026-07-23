@@ -77,10 +77,20 @@ export function SpankGame({
   // `["chapters"]` query `introDialogue` comes from — so on first paint
   // `introDialogue` can still be undefined, locking the lazy initializer
   // above onto "intro" even though a dialogue scene should show once the
-  // chapter data actually arrives a moment later.
+  // chapter data actually arrives a moment later. Only fires for THAT case —
+  // `hadIntroDialogueAtMountRef` stays true whenever introDialogue was
+  // already known at mount, so finishing the dialogue normally (which also
+  // sets phase to "intro") never re-triggers it and loops the player back
+  // to the start of the scene.
+  const hadIntroDialogueAtMountRef = useRef(introDialogue !== undefined);
   const dialogueIntroCaughtUpRef = useRef(false);
   useEffect(() => {
-    if (introDialogue && phase === "intro" && !dialogueIntroCaughtUpRef.current) {
+    if (
+      !hadIntroDialogueAtMountRef.current &&
+      introDialogue &&
+      phase === "intro" &&
+      !dialogueIntroCaughtUpRef.current
+    ) {
       dialogueIntroCaughtUpRef.current = true;
       setPhase("dialogue-intro");
     }

@@ -391,6 +391,33 @@ export function applyForgottenRequestPenalty(state: TraitState): TraitState {
   };
 }
 
+// Fired once at the end of the "aim" mechanic's 60-second timed round
+// (games/registry.ts, SpankGameAim.tsx, Рин's pilot-a) depending on whether
+// the player's zone-hit precision cleared the round's threshold. Lighter
+// than FORGOTTEN_REQUEST_PENALTY on the fail side — missing a reflex check
+// is a skill miss, not a broken promise, so it never touches Affection.
+const AIM_SUCCESS_BONUS = { pleasure: 4, affection: 3, boredomRelief: 5 };
+const AIM_FAIL_PENALTY = { boredom: 6, defiance: 3 };
+
+export function applyAimSuccessBonus(state: TraitState): TraitState {
+  return {
+    ...state,
+    pleasure: clamp(state.pleasure + AIM_SUCCESS_BONUS.pleasure),
+    affection: clamp(state.affection + AIM_SUCCESS_BONUS.affection),
+    boredom: clamp(state.boredom - AIM_SUCCESS_BONUS.boredomRelief),
+    lastActiveAt: Date.now(),
+  };
+}
+
+export function applyAimFailPenalty(state: TraitState): TraitState {
+  return {
+    ...state,
+    boredom: clamp(state.boredom + AIM_FAIL_PENALTY.boredom),
+    defiance: clamp(state.defiance + AIM_FAIL_PENALTY.defiance),
+    lastActiveAt: Date.now(),
+  };
+}
+
 export function applyAftercareRelief(state: TraitState): TraitState {
   return {
     ...state,
